@@ -82,7 +82,8 @@ python-pptx doesn't support:
 }
 
 TERMINOLOGY_NAME = 'pptx-translator-terminology'
-
+DONT_TRANSLATE_WORDS_FILE = f"./dont-translate-word.txt"
+DONT_TRANSLATE_WORDS = f""
 
 translate = boto3.client(service_name='translate')
 
@@ -97,6 +98,17 @@ def contain_chinese(string):
             return True
  
     return False
+
+
+def get_dont_translate_words(file_path):
+    global DONT_TRANSLATE_WORDS
+    arr = []
+    with open(file_path) as f:
+        for l in f.readlines():
+            arr.append(l.strip())
+    
+    DONT_TRANSLATE_WORDS = ",".join(arr)
+    return ",".join(arr)
 
 
 def translate_from_ollama(src, source_language_code, target_language_code):
@@ -114,7 +126,7 @@ def translate_from_ollama(src, source_language_code, target_language_code):
 
     temp = {
         # "model": "llama3.1",
-        "model": "qwen2",
+        "model": "qwen2.5",
         # "prompt": f"Please translate the following into Chinese concisely: \"{src}\"",
         # "prompt": f"请把以下简洁地翻译成中文:: \"{src}\"",
         "stream": False,
@@ -128,7 +140,7 @@ Please only ouput the translated text briefly without any other hints or extensi
 If the input text does not make sense or empty or incomplete, just return the original text. \
 If the original text is already in English, return the original text directly. \
 Remove the leading and trailing double quotes. \
-Please keeping these phrases unchanged: AWS, CDN, SD-WAN, E-commerce."
+Please keeping these phrases unchanged: {DONT_TRANSLATE_WORDS}."
             },
             # {"role": "user", "content": f"{src} --> Chinese"}
             {"role": "user", "content": f"{src}"}
@@ -152,6 +164,7 @@ Please keeping these phrases unchanged: AWS, CDN, SD-WAN, E-commerce."
 def delete_run(run):
     r = run._r
     r.getparent().remove(r)
+
 
 def translate_shape_in_paragraph(shape, source_language_code, target_language_code, terminology_names):
     if not shape.has_text_frame:
@@ -188,7 +201,6 @@ def translate_shape_in_paragraph(shape, source_language_code, target_language_co
                 delete_run(paragraph.runs[index])
                 index = index - 1
 
-                # paragraph.runs[index].delete()
             # # set font for translated text
             if paragraph.font.size is not None:
                 paragraph.font.size = paragraph.font.size - Pt(2)
@@ -351,14 +363,15 @@ def main():
     args = argument_parser.parse_args()
 
     terminology_names = []
-    if args.terminology:
-        import_terminology(args.terminology)
-        terminology_names = [TERMINOLOGY_NAME]
+    # if args.terminology:
+    #     import_terminology(args.terminology)
+    #     terminology_names = [TERMINOLOGY_NAME]
 
     # translate_from_ollama("hello world!", 
     #                         args.source_language_code,
     #                         args.target_language_code)
     
+    get_dont_translate_words(DONT_TRANSLATE_WORDS_FILE)
     print('Translating {file_path} from {source_language_code} to {target_language_code}...'.format(
             file_path=args.input_file_path,
             source_language_code=args.source_language_code,
