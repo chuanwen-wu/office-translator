@@ -105,6 +105,8 @@ def get_dont_translate_words(file_path):
     arr = []
     with open(file_path) as f:
         for l in f.readlines():
+            if l.strip().startswith('#'):
+                continue
             arr.append(l.strip())
     
     DONT_TRANSLATE_WORDS = ",".join(arr)
