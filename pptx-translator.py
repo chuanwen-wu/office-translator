@@ -127,32 +127,31 @@ def translate_from_ollama(src, source_language_code, target_language_code):
         target_language = "Chinese"
 
     temp = {
-        # "model": "llama3.1",
+        # "model": "llama3.2",
         "model": "qwen2.5",
-        # "prompt": f"Please translate the following into Chinese concisely: \"{src}\"",
-        # "prompt": f"请把以下简洁地翻译成中文:: \"{src}\"",
         "stream": False,
+        "options": {
+            'temperature': 0
+        },
         "messages": [
             {
                 "role": "system",
                 "content": f"You are a highly skilled translator. Your task is to accurately translate the text I provide from \
 {source_language} into the {target_language} while preserving the meaning, tone, and nuance of the original text. \
 Please maintain proper grammar, spelling, and punctuation in the translated version. \
-Please only ouput the translated text briefly without any other hints or extensions. \
+Please answer briefly without any other hints or extensions. \
 If the input text does not make sense or empty or incomplete, just return the original text. \
 If the original text is already in English, return the original text directly. \
 Remove the leading and trailing double quotes. \
 Please keeping these phrases unchanged: {DONT_TRANSLATE_WORDS}."
             },
-            # {"role": "user", "content": f"{src} --> Chinese"}
             {"role": "user", "content": f"{src}"}
         ]
     }
     # print(temp)
-   
 
     data = json.dumps(temp)
-    # print(f'temp: {data}')
+    print(f'temp: {data}')
     # url = 'http://localhost:11434/api/generate'
     url = 'http://localhost:11434/api/chat'
     response = requests.post(url, data=data)
@@ -167,16 +166,12 @@ def delete_run(run):
     r = run._r
     r.getparent().remove(r)
 
-
-def translate_shape_in_paragraph(shape, source_language_code, target_language_code, terminology_names):
-    if not shape.has_text_frame:
-        return
-    
-    # shape.text_frame.auto_size = MSO_AUTO_SIZE.NONE
-    for paragraph in shape.text_frame.paragraphs:
+def translate_text_frame(text_frame, source_language_code, target_language_code, terminology_names):
+    for paragraph in text_frame.paragraphs:
         paraText = ''
         for index, paragraph_run in enumerate(paragraph.runs):
             paraText += paragraph_run.text
+        # print(paraText)
 
         try:
             if len(paraText.strip()) == 0:
@@ -186,14 +181,7 @@ def translate_shape_in_paragraph(shape, source_language_code, target_language_co
             if contain_chinese(paraText.strip()) == False and source_language_code.lower() == 'zh':
                 print(f"not chinese: {paraText}")
                 continue
-                    
-            # print(f'body: \"{paragraph_run.text.strip()}\"')
-            # response = translate.translate_text(
-            #         Text=paragraph_run.text,
-            #         SourceLanguageCode=source_language_code,
-            #         TargetLanguageCode=target_language_code,
-            #         TerminologyNames=terminology_names)
-            # paragraph.runs[index].text = response.get('TranslatedText')
+
             reponse_text = translate_from_ollama(paraText.strip(), source_language_code, target_language_code)
             paragraph.runs[0].text = reponse_text
             size = len(paragraph.runs)
@@ -204,10 +192,11 @@ def translate_shape_in_paragraph(shape, source_language_code, target_language_co
                 index = index - 1
 
             # # set font for translated text
-            if paragraph.font.size is not None:
-                paragraph.font.size = paragraph.font.size - Pt(2)
-            elif paragraph.runs[0].font.size is not None:
-                paragraph.runs[0].font.size = paragraph.runs[0].font.size - Pt(2)
+            # if paragraph.font.size is not None:
+            #     paragraph.font.size = paragraph.font.size - Pt(2)
+            # elif paragraph.runs[0].font.size is not None:
+            #     paragraph.runs[0].font.size = paragraph.runs[0].font.size - Pt(2)
+
                 # for each in paragraph.runs: each.font.size = run.font.size
             
             # run.font.language_id = LANGUAGE_CODE_TO_LANGUAGE_ID[target_language_code]
@@ -219,35 +208,28 @@ def translate_shape_in_paragraph(shape, source_language_code, target_language_co
                 # Amazon Translate limits: https://docs.aws.amazon.com/translate/latest/dg/what-is-limits.html
                 # We just ignore and don't translate the text.
                 print('Invalid text. Ignoring...')
-        
-    # shape.text_frame.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
-    shape.text_frame.auto_size = MSO_AUTO_SIZE.SHAPE_TO_FIT_TEXT
 
+def translate_table(table, source_language_code, target_language_code, terminology_names):
+    for row in table.rows:
+        for cell in row.cells:
+            text_frame = cell.text_frame
+            translate_text_frame(text_frame, source_language_code, target_language_code, terminology_names)
+            
 
 def translate_shape(shape, source_language_code, target_language_code, terminology_names):
-    if not shape.has_text_frame:
-        return
-    for paragraph in shape.text_frame.paragraphs:
-        for index, paragraph_run in enumerate(paragraph.runs):
-            try:
-                if len(paragraph_run.text.strip()) == 0:
-                    continue
-                # print(f'body: \"{paragraph_run.text.strip()}\"')
-                # response = translate.translate_text(
-                #         Text=paragraph_run.text,
-                #         SourceLanguageCode=source_language_code,
-                #         TargetLanguageCode=target_language_code,
-                #         TerminologyNames=terminology_names)
-                # paragraph.runs[index].text = response.get('TranslatedText')
-                reponse_text = translate_from_ollama(paragraph_run.text.strip(), source_language_code, target_language_code)
-                paragraph.runs[index].text = reponse_text
-                paragraph.runs[index].font.language_id = LANGUAGE_CODE_TO_LANGUAGE_ID[target_language_code]
-            except ClientError as client_error:
-                if (client_error.response['Error']['Code'] == 'ValidationException'):
-                    # Text not valid. Maybe the size of the text exceeds the size limit of the service.
-                    # Amazon Translate limits: https://docs.aws.amazon.com/translate/latest/dg/what-is-limits.html
-                    # We just ignore and don't translate the text.
-                    print('Invalid text. Ignoring...')
+    # table
+    if shape.has_table:
+        translate_table(shape.table, source_language_code, target_language_code, terminology_names)
+
+    # text_frame
+    if shape.has_text_frame:
+        translate_text_frame(shape.text_frame, source_language_code, target_language_code, terminology_names)
+
+    # groups
+    if shape.shape_type == MSO_SHAPE_TYPE.GROUP:
+        for sub_shape in shape.shapes:
+            translate_shape(sub_shape, source_language_code, target_language_code, terminology_names)
+    
 
 def translate_presentation(presentation, source_language_code, target_language_code, terminology_names):
     slide_number = 1
@@ -257,7 +239,7 @@ def translate_presentation(presentation, source_language_code, target_language_c
                 number_of_slides=len(presentation.slides)))
         slide_number += 1
 
-        # for smartArt text 尚不支持smartArt
+        # 尚不支持smartArt
 
         # translate comments
         if slide.has_notes_slide:
@@ -280,63 +262,22 @@ def translate_presentation(presentation, source_language_code, target_language_c
                         # We just ignore and don't translate the text.
                         print('Invalid text. Ignoring...')
 
-        # # translate other texts
+        # translate other texts
         for shape in slide.shapes:
-            translate_shape_in_paragraph(shape, source_language_code, target_language_code, terminology_names)
-            # if not shape.has_text_frame:
-            #     continue
-            # for paragraph in shape.text_frame.paragraphs:
-            #     for index, paragraph_run in enumerate(paragraph.runs):
-            #         try:
-            #             if len(paragraph_run.text.strip()) == 0:
-            #                 continue
-            #             print(f'body: \"{paragraph_run.text}\"')
-            #             # response = translate.translate_text(
-            #             #         Text=paragraph_run.text,
-            #             #         SourceLanguageCode=source_language_code,
-            #             #         TargetLanguageCode=target_language_code,
-            #             #         TerminologyNames=terminology_names)
-            #             # paragraph.runs[index].text = response.get('TranslatedText')
-            #             reponse_text = translate_from_ollama(paragraph_run.text, source_language_code, target_language_code)
-            #             paragraph.runs[index].text = reponse_text
-            #             paragraph.runs[index].font.language_id = LANGUAGE_CODE_TO_LANGUAGE_ID[target_language_code]
-            #         except ClientError as client_error:
-            #             if (client_error.response['Error']['Code'] == 'ValidationException'):
-            #                 # Text not valid. Maybe the size of the text exceeds the size limit of the service.
-            #                 # Amazon Translate limits: https://docs.aws.amazon.com/translate/latest/dg/what-is-limits.html
-            #                 # We just ignore and don't translate the text.
-            #                 print('Invalid text. Ignoring...')
+            translate_shape(shape, source_language_code, target_language_code, terminology_names)
 
-        # # ---only operate on group shapes---
-        group_shapes = [
-            shp for shp in slide.shapes
-            if shp.shape_type == MSO_SHAPE_TYPE.GROUP
-        ]
-        for group_shape in group_shapes:
-            for shape in group_shape.shapes:
-                translate_shape_in_paragraph(shape, source_language_code, target_language_code, terminology_names)
-                # if shape.has_text_frame:
-                #     for paragraph in shape.text_frame.paragraphs:
-                #         for index, paragraph_run in enumerate(paragraph.runs):
-                #             try:
-                #                 if len(paragraph_run.text.strip()) == 0:
-                #                     continue
-                #                 print(f'body2: {paragraph_run.text}')
-                #                 # response = translate.translate_text(
-                #                 #         Text=paragraph_run.text,
-                #                 #         SourceLanguageCode=source_language_code,
-                #                 #         TargetLanguageCode=target_language_code,
-                #                 #         TerminologyNames=terminology_names)
-                #                 # paragraph.runs[index].text = response.get('TranslatedText')
-                #                 reponse_text = translate_from_ollama(paragraph_run.text, source_language_code, target_language_code)
-                #                 paragraph.runs[index].text = reponse_text
-                #                 paragraph.runs[index].font.language_id = LANGUAGE_CODE_TO_LANGUAGE_ID[target_language_code]
-                #             except ClientError as client_error:
-                #                 if (client_error.response['Error']['Code'] == 'ValidationException'):
-                #                     # Text not valid. Maybe the size of the text exceeds the size limit of the service.
-                #                     # Amazon Translate limits: https://docs.aws.amazon.com/translate/latest/dg/what-is-limits.html
-                #                     # We just ignore and don't translate the text.
-                #                     print('Invalid text. Ignoring...')
+        # ---only operate on group shapes---
+        # group_shapes = [
+        #     shp for shp in slide.shapes
+        #     if shp.shape_type == MSO_SHAPE_TYPE.GROUP
+        # ]
+        # for group_shape in group_shapes:
+        #     for shape in group_shape.shapes:
+        #         print(f"name: {shape.name}")
+        #         if shape.shape_type == MSO_SHAPE_TYPE.GROUP:
+        #             for sp in shape.shapes:
+        #                 print(f"sub name: {sp.name}")
+        #         translate_shape(shape, source_language_code, target_language_code, terminology_names)
 
 
 def import_terminology(terminology_file_path):
