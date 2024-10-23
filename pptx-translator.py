@@ -1,12 +1,6 @@
 #!/usr/bin/env python
-# Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
-# SPDX-License-Identifier: MIT-0
 
 import argparse
-
-import boto3
-
-from botocore.exceptions import ClientError
 from pptx import Presentation
 from pptx.enum.lang import MSO_LANGUAGE_ID
 from pptx.enum.shapes import MSO_SHAPE_TYPE
@@ -14,7 +8,6 @@ from pptx.enum.text import MSO_AUTO_SIZE
 import json
 import requests
 from pptx.util import Pt
-import copy
 
 LANGUAGE_CODE_TO_LANGUAGE_ID = {
 """
@@ -81,11 +74,9 @@ python-pptx doesn't support:
     'zh-TW': MSO_LANGUAGE_ID.CHINESE_HONG_KONG_SAR,
 }
 
-TERMINOLOGY_NAME = 'pptx-translator-terminology'
+# TERMINOLOGY_NAME = 'pptx-translator-terminology'
 DONT_TRANSLATE_WORDS_FILE = f"./dont-translate-word.txt"
 DONT_TRANSLATE_WORDS = f""
-
-translate = boto3.client(service_name='translate')
 
 def contain_chinese(string):
     """
@@ -166,6 +157,7 @@ def delete_run(run):
     r = run._r
     r.getparent().remove(r)
 
+
 def translate_text_frame(text_frame, source_language_code, target_language_code, terminology_names):
     for paragraph in text_frame.paragraphs:
         paraText = ''
@@ -202,12 +194,8 @@ def translate_text_frame(text_frame, source_language_code, target_language_code,
             # run.font.language_id = LANGUAGE_CODE_TO_LANGUAGE_ID[target_language_code]
             # paragraph.runs[index].text = reponse_text
             # paragraph.runs[index].font.language_id = LANGUAGE_CODE_TO_LANGUAGE_ID[target_language_code]
-        except ClientError as client_error:
-            if (client_error.response['Error']['Code'] == 'ValidationException'):
-                # Text not valid. Maybe the size of the text exceeds the size limit of the service.
-                # Amazon Translate limits: https://docs.aws.amazon.com/translate/latest/dg/what-is-limits.html
-                # We just ignore and don't translate the text.
-                print('Invalid text. Ignoring...')
+        except Exception as err:
+            print(f"Unexpected {err=}, {type(err)=}")
 
 def translate_table(table, source_language_code, target_language_code, terminology_names):
     for row in table.rows:
@@ -255,42 +243,25 @@ def translate_presentation(presentation, source_language_code, target_language_c
                     #         TerminologyNames=terminology_names)
                     # slide.notes_slide.notes_text_frame.text = response.get('TranslatedText')
                     # response_str = translate_from_ollama()
-                except ClientError as client_error:
-                    if (client_error.response['Error']['Code'] == 'ValidationException'):
-                        # Text not valid. Maybe the size of the text exceeds the size limit of the service.
-                        # Amazon Translate limits: https://docs.aws.amazon.com/translate/latest/dg/what-is-limits.html
-                        # We just ignore and don't translate the text.
-                        print('Invalid text. Ignoring...')
+                except Exception as err:
+                    print(f"Unexpected {err=}, {type(err)=}")
 
         # translate other texts
         for shape in slide.shapes:
             translate_shape(shape, source_language_code, target_language_code, terminology_names)
 
-        # ---only operate on group shapes---
-        # group_shapes = [
-        #     shp for shp in slide.shapes
-        #     if shp.shape_type == MSO_SHAPE_TYPE.GROUP
-        # ]
-        # for group_shape in group_shapes:
-        #     for shape in group_shape.shapes:
-        #         print(f"name: {shape.name}")
-        #         if shape.shape_type == MSO_SHAPE_TYPE.GROUP:
-        #             for sp in shape.shapes:
-        #                 print(f"sub name: {sp.name}")
-        #         translate_shape(shape, source_language_code, target_language_code, terminology_names)
 
-
-def import_terminology(terminology_file_path):
-    print('Importing terminology data from {file_path}...'.format(file_path=terminology_file_path))
-    with open(terminology_file_path, 'rb') as f:
-        translate.import_terminology(Name=TERMINOLOGY_NAME,
-                                     MergeStrategy='OVERWRITE',
-                                     TerminologyData={'File': bytearray(f.read()), 'Format': 'CSV'})
+# def import_terminology(terminology_file_path):
+#     print('Importing terminology data from {file_path}...'.format(file_path=terminology_file_path))
+#     with open(terminology_file_path, 'rb') as f:
+#         translate.import_terminology(Name=TERMINOLOGY_NAME,
+#                                      MergeStrategy='OVERWRITE',
+#                                      TerminologyData={'File': bytearray(f.read()), 'Format': 'CSV'})
 
 
 def main():
     argument_parser = argparse.ArgumentParser(
-            'Translates pptx files from source language to target language using Amazon Translate service')
+            'Translates pptx files from source language to target language using LLM')
     argument_parser.add_argument(
             'source_language_code', type=str,
             help='The language code for the language of the source text. Example: en')
@@ -300,9 +271,9 @@ def main():
     argument_parser.add_argument(
             'input_file_path', type=str,
             help='The path of the pptx file that should be translated')
-    argument_parser.add_argument(
-            '--terminology', type=str,
-            help='The path of the terminology CSV file')
+    # argument_parser.add_argument(
+    #         '--terminology', type=str,
+            # help='The path of the terminology CSV file')
     args = argument_parser.parse_args()
 
     terminology_names = []
