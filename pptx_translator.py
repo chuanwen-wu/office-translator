@@ -1,14 +1,15 @@
 #!/usr/bin/env python
-
+import logging
 import argparse
 from pptx import Presentation
 from pptx.enum.lang import MSO_LANGUAGE_ID
 from pptx.enum.shapes import MSO_SHAPE_TYPE
 from pptx.enum.text import MSO_AUTO_SIZE
 import json
+import base64
 import requests
 from pptx.util import Pt
-
+from io import BytesIO
 LANGUAGE_CODE_TO_LANGUAGE_ID = {
 """
 Dict that maps Amazon Translate language code to MSO_LANGUAGE_ID enum value.
@@ -78,6 +79,15 @@ python-pptx doesn't support:
 DONT_TRANSLATE_WORDS_FILE = f"./dont-translate-word.txt"
 DONT_TRANSLATE_WORDS = f""
 
+# Set up logger
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+formatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+
+# Log to console
+handler = logging.StreamHandler()
+handler.setFormatter(formatter)
+logger.addHandler(handler)
 def contain_chinese(string):
     """
     检查整个字符串是否包含中文
@@ -259,7 +269,7 @@ def translate_presentation(presentation, source_language_code, target_language_c
 #                                      TerminologyData={'File': bytearray(f.read()), 'Format': 'CSV'})
 
 
-def main():
+def run_as_local():
     argument_parser = argparse.ArgumentParser(
             'Translates pptx files from source language to target language using LLM')
     argument_parser.add_argument(
@@ -277,13 +287,6 @@ def main():
     args = argument_parser.parse_args()
 
     terminology_names = []
-    # if args.terminology:
-    #     import_terminology(args.terminology)
-    #     terminology_names = [TERMINOLOGY_NAME]
-
-    # translate_from_ollama("hello world!", 
-    #                         args.source_language_code,
-    #                         args.target_language_code)
     
     get_dont_translate_words(DONT_TRANSLATE_WORDS_FILE)
     print('Translating {file_path} from {source_language_code} to {target_language_code}...'.format(
@@ -302,5 +305,97 @@ def main():
     presentation.save(output_file_path)
 
 
+from kafka import KafkaConsumer
+from time import sleep
+def subscribe_translate_task():
+    topic_name = 'pptx-translate'
+    group_name = 'group1'
+    kafka_servers = ['localhost:9092']
+    while True:
+        # To consume latest messages and auto-commit offsets
+        consumer = KafkaConsumer(topic_name,
+                                 group_id=group_name,
+                                 bootstrap_servers=kafka_servers,
+                                 enable_auto_commit=True,
+                                #  auto_offset_reset='earliest',
+                                 max_poll_records=1)
+        for message in consumer:
+            # message value and key are raw bytes -- decode if necessary!
+        # e.g., for unicode: `message.value.decode('utf-8')`
+            # print("%s:%d:%d: key=%s value=%s" % (message.topic, message.partition,
+            #                                   message.offset, message.key,
+            #                                   message.value))
+            #logger.info("%s:%d:%d: key=%s" % (message.topic, message.partition, message.offset, message.key)) #todo
+            task = json.loads(message.value.decode('utf-8'))
+            task['input_file_content'] = base64.b64decode(task['input_file_content'])
+            logger.info(f"Receive task: id={task['id']}, md5={task['md5']}, source_language={task['source_language']}, target_language={task['target_language']}")
+            break
+        consumer.close()
+        ret, output_file_content = translate_pptx_file(task['input_file_content'], task['source_language'], task['target_language'])
+        if ret == 0:
+            task['status'] = 2  #finished
+            task['output_file_content'] = output_file_content
+        else: #todo error
+            task['status'] = 3  #error
+
+        del task['input_file_content']
+
+        # publish status update todo
+        publish_status_update(task)
+
+from kafka import KafkaProducer
+from kafka.errors import KafkaError
+def publish_status_update(task):
+    topic_name = 'status-update'
+    kafka_servers = ['localhost:9092']
+    producer = KafkaProducer(bootstrap_servers=kafka_servers)
+    # Asynchronous by default
+    task['output_file_content'] = base64.b64encode(task['output_file_content']).decode('utf-8')
+    # print(f"json.dumps(task): {json.dumps(task).encode('utf-8')}")
+    # future = producer.send(topic_name, json.dumps(task).encode('utf-8'))
+    future = producer.send(topic_name, key=bytes(str(task['id']), encoding='ascii'), value=json.dumps(task).encode('utf-8'))
+    logger.info(f"[publish_status_update]: id={task['id']}, status={task['status']}, md5={task['md5']}, source_language={task['source_language']}, target_language={task['target_language']}")
+    # Block for 'synchronous' sends
+    try:
+        record_metadata = future.get(timeout=10)
+        # Successful result returns assigned partition and offset
+        logger.info(f"record_metadata.topic: {record_metadata.topic}, partition: {record_metadata.partition}, offset: {record_metadata.offset}")
+        return True
+    except KafkaError:
+        # Decide what to do if produce request failed...
+        # log.exception()
+        logger.info('KafkaError')
+        pass
+
+def translate_pptx_file(input_file_content, source_language_code, target_language_code):
+    ret = 0
+    print(f"source_language_code: {source_language_code}, target_language_code: {target_language_code}")
+    # print(f"input_file_content: {input_file_content}")
+    try:
+        # for test
+        # temp_file = "out.pptx"
+        # with open(temp_file, 'wb') as f:
+        #     f.write(input_file_content)
+        # bytes => BytesIO: file-like object
+        presentation = Presentation(BytesIO(input_file_content))
+    except Exception as err:
+        ret = 1
+        logger.error(f"Unexpected {err=}, {type(err)=}")
+        return ret, None
+    
+    try:
+        translate_presentation(presentation, source_language_code, target_language_code, None)
+        output_file_content = BytesIO()
+        presentation.save(output_file_content)
+        return ret, output_file_content.getvalue()
+    except Exception as err:
+        ret = -1
+        logger.error(f"Unexpected {err=}, {type(err)=}")
+        return ret, None
+    # output_file_path = "out.pptx"
+    # print('Saving {output_file_path}...'.format(output_file_path=output_file_path))
+    # presentation.save(output_file_path)
+
 if __name__== '__main__':
-    main()
+    # run_as_local()
+    subscribe_translate_task()

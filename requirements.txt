@@ -2,3 +2,4 @@ boto3==1.11.14
 # python-pptx==0.6.18
 python-pptx
 requests
+mysql-connector-python

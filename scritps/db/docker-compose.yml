@@ -1,0 +1,35 @@
+# version: '3'
+# services:
+#     mysql_shared:
+#         image: mysql:latest
+#         ports:
+#             - "3306:3306"
+#         volumes:
+#             # - /etc/localtime:/etc/localtime:ro
+#             - "$PWD/../storage:/var/lib/mysql"
+#         # 环境变量
+#         environment:
+#             # mysql密码
+#             - MYSQL_ROOT_PASSWORD=a
+#         container_name: "mysql_shared"
+#         networks: 
+#             - test_net
+# networks:
+#     test_net:
+#         external: true
+
+# Use root/example as user/password credentials
+version: '3.1'
+
+services:
+  mysql_shared:
+    image: mysql
+    restart: always
+    ports:
+        - "3306:3306"
+    volumes:
+        - "$PWD/../storage:/var/lib/mysql"
+    environment:
+      MYSQL_ROOT_PASSWORD: a
+    container_name: "mysql_shared"
+    # (this is just an example, not intended to be a production configuration)

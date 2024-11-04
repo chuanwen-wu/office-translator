@@ -8,8 +8,9 @@
 - 自定义免翻译词汇：一些专有名词免翻译
 
 不支持：
+- 不支持图片翻译；
 - 不支持SmartAr翻译：如果ppt中出现SmartArt，会保留不变输出到目标文件中；
-- 不支持文本框大小自动调整：大多数情况下，中文翻译成英文后，文本长度会变长，反之会变短，翻译后会保留字体及大小，需要手动视情况做二次调整
+- 不支持文本框大小自动调整：大多数情况下，中文翻译成英文后，文本长度会变长，反之则会变短，翻译后会保留字体及大小，需要再手动调整字体大小，以适配PPT的布局；
 
 ## 安装
 
@@ -39,4 +40,4 @@ optional arguments:
 
 ## License
 
-This library is licensed under the MIT-0 License. See the LICENSE file.
+This library is licensed under the Apache License Version 2.0. See the LICENSE file.
