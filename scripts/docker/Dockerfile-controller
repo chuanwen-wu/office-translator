@@ -1,0 +1,19 @@
+FROM docker.io/library/python:3.11
+LABEL maintainer="Kennethwu"
+
+RUN apt update && apt -y install inetutils-ping netcat-openbsd net-tools
+#RUN mkdir /usr/local/blender-3.5.0
+#ADD blender-3.5.0-linux-x64 /usr/local/blender-3.5.0
+#RUN ln -s /usr/local/blender-3.5.0/blender /usr/bin/blender
+
+# ENTRYPOINT ["/usr/local/blender/blender", "-b"]
+
+WORKDIR /app/
+COPY requirements.txt /app/requirements.txt
+RUN pip install -r requirements.txt
+
+COPY httpd.py /app/httpd.py
+COPY task.py /app/task.py
+COPY pptx_translator.py /app/pptx_translator.py
+# COPY scripts/db/init.sql /docker-entrypoint-initdb.d
+ENTRYPOINT ["python /app/httpd.py", "-b"]

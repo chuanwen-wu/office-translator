@@ -4,6 +4,13 @@ import os
 import logging
 import time
 import base64
+
+DB_CONFIG = {
+    'host': os.getenv('DB_HOST', '127.0.0.1'),
+    'user': os.getenv('DB_USER', 'root'),
+    'password': os.getenv('DB_PASSWORD', 'a'),
+    'database': os.getenv('DB_NAME', 'office_translator')
+}
 # Set up logger
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -13,6 +20,7 @@ formatter = logging.Formatter("%(asctime)s - %(filename)s:%(lineno)d - %(levelna
 handler = logging.StreamHandler()
 handler.setFormatter(formatter)
 logger.addHandler(handler)
+logger.info(f"DB_CONFIG: {DB_CONFIG}")
 
 class Task:
     def __init__(self, id=None, md5=None, status=None, file_name=None, source_language=None, target_language=None, 
@@ -34,6 +42,11 @@ class Task:
         self.db_conn = None
         self.input_file_content = input_file_content
         self.output_file_content = output_file_content
+
+    def __del__(self):
+        if self.db_conn is not None and self.db_conn.is_connected():
+            logger.info("Closing database connection")
+            self.db_conn.close()
 
     def __str__(self):
         return (f"Task(id={self.id}, md5={self.md5}, status={self.status}, file_name={self.file_name}, "
@@ -66,13 +79,13 @@ class Task:
     
     def get_connection(self):
         if self.db_conn is None or not self.db_conn.is_connected():
-            db_config = {
-                'host': os.getenv('DB_HOST', '127.0.0.1'),
-                'user': os.getenv('DB_USER', 'root'),
-                'password': os.getenv('DB_PASSWORD', 'a'),
-                'database': os.getenv('DB_NAME', 'office_translator')
-            }
-            self.db_conn = self.connect_to_mysql(db_config)
+            # db_config = {
+            #     'host': os.getenv('DB_HOST', '127.0.0.1'),
+            #     'user': os.getenv('DB_USER', 'root'),
+            #     'password': os.getenv('DB_PASSWORD', 'a'),
+            #     'database': os.getenv('DB_NAME', 'office_translator')
+            # }
+            self.db_conn = self.connect_to_mysql(DB_CONFIG)
             if self.db_conn is None:
                 logger.error("Failed to connect to MySQL")
                 return None
@@ -102,7 +115,9 @@ class Task:
         if len(rows) == 0:
             return False
         else:
-            self.id, self.md5, self.status, self.file_name, self.source_language, self.target_language, self.dont_translate_list, self.input_file_path, self.output_file_path, self.callback_url, self.created_at, self.updated_at = rows[0]
+            self.id, self.md5, self.status, self.file_name, self.source_language, self.target_language, \
+                self.dont_translate_list, self.input_file_path, self.output_file_path, self.callback_url, \
+                self.user_id, self.created_at, self.updated_at = rows[0]
             return True
     
     def insert(self):

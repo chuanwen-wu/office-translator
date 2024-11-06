@@ -6,7 +6,6 @@ import json
 import base64
 import hashlib
 import os
-from pptx_translator import subscribe_translate_task
 from task import Task
 from io import BytesIO
 import mysql.connector
@@ -17,6 +16,7 @@ logger.setLevel(logging.INFO)
 formatter = logging.Formatter("%(asctime)s - %(filename)s:%(lineno)d - %(levelname)s - %(message)s")
 
 # Log to console
+
 handler = logging.StreamHandler()
 handler.setFormatter(formatter)
 logger.addHandler(handler)
@@ -28,7 +28,7 @@ logger.addHandler(handler)
 
 file_repo_dir = './file_repo'
 done_repo_dir = os.path.join(file_repo_dir, 'done')
-download_url_prefix = 'http://localhost:8080/download/'
+download_url_prefix = 'http://localhost:8080/download/'   # todo host
 task = {
     'md5': '',
     'status': 0,
@@ -41,18 +41,15 @@ task = {
     'callback_url': '',
 }
 
-"""
-POST  /v1/ppt-translate
-Parameters:
-	source_lang
-	target_lang
-	dont_translate_word_list
-	input_file
-
-"""
-hostName = "localhost"
+hostName = "0.0.0.0"
 serverPort = 8080
 db_conn = None
+
+KAFKA_CONFIG = {
+    'topic_pptx': os.getenv('KAFKA_TOPIC_PPTX', 'pptx-translate'),
+    'topic_status': os.getenv('KAFKA_TOPIC_STATUS_UPDATE', 'status-update'),
+    'servers': os.getenv('KAFKA_SERVERS', 'localhost:9092').split(',')
+}
 
 class MyServer(SimpleHTTPRequestHandler):
     def __init__(self, *args, **kwargs):
@@ -110,39 +107,9 @@ class MyServer(SimpleHTTPRequestHandler):
                 self.send_error(403, "request params error")
         elif pp == 'download':
             filename = p[-1]
-            # output_file_path = query_params.get('filename', [''])[0]
-            # # output_file_path = os.path.join("./", output_file_path)
             logger.info(f"download file: {filename}")
-            # if os.path.exists(output_file_path):
-                # logger.info(f"file exists: {filename}")
-                # self.send_header("Content-type", "application/octet-stream")
-                # self.send_header("Content-length", os.path.getsize(output_file_path))
-                # self.send_response(200)
-                # self.end_headers()
-                # # with open(output_file_path, 'rb') as f:
-                # #     self.wfile.write(f.read())
-         
-                # f = open(output_file_path, 'rb')
-                # if f:
-                #     try:
-                #         self.copyfile(f, self.wfile)
-                #         logger.info(f"copy file: {output_file_path} to wfile")
-                #     finally:
-                #         f.close()
-                # """Serve a GET request."""
             self.path = filename
             super().do_GET()
-                # f = self.send_head()
-                # if f:
-                #     try:
-                #         self.copyfile(f, self.wfile)
-                #     finally:
-                #         f.close()
-            # else:
-            #     self.send_response(404)
-            #     self.send_header("Content-type", "text/plain")
-            #     self.end_headers()
-            #     self.wfile.write(b'Not Found')
         else:
             # super().do_GET()
             # self.send_response(200)
@@ -178,6 +145,14 @@ class MyServer(SimpleHTTPRequestHandler):
                 target_lang = post_vars['target_lang'][0]
                 input_file_content = post_vars['file'][0]
                 input_filename = post_vars.get('filename', [''])[0]
+                if not input_filename.endswith('.pptx'):
+                    logger.error(f"input_filename must end with .pptx")
+                    self.send_response(400)
+                    self.send_header("Content-type", "application/json")
+                    self.end_headers()
+                    response = json.dumps({'code': 400, 'message': 'input_filename must end with .pptx'})
+                    self.wfile.write(response.encode())
+                    return 0
                 dont_translate_word_list = post_vars['dont_translate_word_list'][0]
                 res = submit_translate_task(source_lang, target_lang, input_file_content, dont_translate_word_list, input_filename)
                 self.send_response(200)
@@ -226,16 +201,6 @@ def submit_translate_task(source_lang, target_lang, input_file_content, dont_tra
     logger.info(f"submit_translate_task: source_lang={source_lang}, target_lang={target_lang}, dont_translate_word_list={dont_translate_word_list}, input_filename={input_filename}")
     os.makedirs(file_repo_dir, exist_ok=True)
     file_md5 = hashlib.md5(input_file_content).hexdigest()
-    # task_info = {   #todo change to struct
-    #     'md5': file_md5,
-    #     # 'status': 0,
-    #     'file_name': input_filename,
-    #     'source_language': source_lang,
-    #     'target_language': target_lang,
-    #     'dont_translate_list': dont_translate_word_list,
-    #     'input_file_path': '',
-    #     'output_file_path': '',
-    # }
     task_obj = Task(md5=file_md5, 
                     file_name=input_filename, 
                     source_language=source_lang, 
@@ -261,30 +226,11 @@ def submit_translate_task(source_lang, target_lang, input_file_content, dont_tra
         res = {
             'code': 0,
             'status': task_obj.status,
+            'task_id': task_obj.id,
             'message': msg,
             'download_file_path': download_file_path,
         }
         return res['code'], res
-        # task_status = task_old[2]
-        # task_id = task_old[0]
-        # output_file_path = task_old[8]
-        # if task_status != 3:
-        #     logger.info(f"task already exists: {task_old}")
-        #     msg = "task already exists"
-        #     if task_status == 0:
-        #         msg = f"{msg}, and is pending"
-        #     elif task_status == 1:
-        #         msg = f"{msg}, and is processing"
-        #     elif task_status == 2:
-        #         msg = f"{msg}, and is completed"
-        #     res = {
-        #         'code': 0,
-        #         'status': task_status,
-        #         'message': msg,
-        #         'task_id': task_id,
-        #         'file_path': output_file_path
-        #     }
-        #    return res['code'], res
     else: # 任务不存在或已失败
         if ret is True and task_obj.status == 3:   #任务存在且已失败
             logger.info(f"task already failed: {task_obj}")
@@ -300,16 +246,11 @@ def submit_translate_task(source_lang, target_lang, input_file_content, dont_tra
         task_obj.id = None
         task_obj.status = 0
         task_obj.input_file_path = input_file_path
-        task_obj.output_file_path = os.path.join(time.strftime('%Y%m%d-%H%M%S',time.localtime(time.time())) + '-' + target_lang + "-" + input_filename)
-        # task_info['status'] = 0
-        # task_info['input_file_path'] = input_filename
-        # task_info['output_file_path'] = os.path.join(time.strftime('%Y%m%d-%H%M%S',time.localtime(time.time())) + '-' + target_lang + "-" + input_filename)
-        
+        # task_obj.output_file_path = os.path.join(time.strftime('%Y%m%d-%H%M%S',time.localtime(time.time())) + '-' + target_lang + "-" + input_filename)
+        task_obj.output_file_path = input_filename.replace('.pptx', 
+            "-{target_lang}-{timestr}.pptx".format(target_lang=target_lang, timestr=time.strftime('%Y%m%d%H%M%S',time.localtime(time.time()))))
         ret, task_id, msg = task_obj.insert()
-        # ret, task_id, msg = new_task(task_info)
         if ret == 0:
-            # task_info['input_file_content'] = input_file_content
-            # task_info['task_id'] = task_id
             task_obj.input_file_content = input_file_content
             publish_translate_task(task_obj)
         res = {
@@ -322,128 +263,33 @@ def submit_translate_task(source_lang, target_lang, input_file_content, dont_tra
         return res['code'], res
 
 
-def connect_to_mysql(config, attempts=3, delay=2):
-    attempt = 1
-    # Implement a reconnection routine
-    while attempt < attempts + 1:
-        try:
-            return mysql.connector.connect(**config)
-        except (mysql.connector.Error, IOError) as err:
-            if (attempts is attempt):
-                # Attempts to reconnect failed; returning None
-                logger.info("Failed to connect, exiting without a connection: %s", err)
-                return None
-            logger.info(
-                "Connection failed: %s. Retrying (%d/%d)...",
-                err,
-                attempt,
-                attempts-1,
-            )
-            # progressive reconnect delay
-            time.sleep(delay ** attempt)
-            attempt += 1
-    return None
-
-def get_connection():
-    global db_conn
-    if db_conn is None or not db_conn.is_connected():
-        db_config = {
-            'host': os.getenv('DB_HOST', '127.0.0.1'),
-            'user': os.getenv('DB_USER', 'root'),
-            'password': os.getenv('DB_PASSWORD', 'a'),
-            'database': os.getenv('DB_NAME', 'office_translator')
-        }
-        db_conn = connect_to_mysql(db_config)
-    return db_conn
-
-
-# def get_task_by_id(task_id):
-#     sql = f"SELECT * FROM tasks WHERE task_id = {task_id}"
-#     rows = query_task(sql)
-#     if len(rows) == 0:
-#         return None
-#     else:
-#         return rows[0]
-
-
-# def get_task(task): #todo 复用query_tas
-#     cnx = get_connection()
-#     with cnx.cursor() as cursor:
-#         sql = (f"SELECT * FROM tasks WHERE "
-#                f"md5 = '{task['md5']}' and "
-#                f"source_language = '{task['source_language']}' and "
-#                f"target_language = '{task['target_language']}'")
-#         logger.info(f"get task sql: {sql}")
-#         cursor.execute(sql)
-#         rows = cursor.fetchall()
-#         cursor.close()
-#         cnx.close()
-#         if len(rows) == 0:
-#             return None
-#         else:
-#             logger.info(f"get task: {rows[0]}")
-#             return rows[0]
-
-# def query_task(sql):
-#     rows = []
-#     cnx = get_connection()
-#     with cnx.cursor() as cursor:
-#         cursor.execute(sql)
-#         rows = cursor.fetchall()
-#         cursor.close()
-    
-#     cnx.close()
-#     return rows
-
-# def new_task(task):
-#     cnx = get_connection()
-#     sql_str = ("INSERT INTO tasks "
-#         "(md5, status, file_name, source_language, target_language, dont_translate_list, input_file_path, output_file_path) "
-#         "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"
-#         " ON DUPLICATE KEY UPDATE status=%s, file_name=%s, dont_translate_list=%s,input_file_path=%s, output_file_path=%s")
-#     data = (task['md5'], task['status'], task['file_name'], task['source_language'], task['target_language'], 
-#         task['dont_translate_list'], task['input_file_path'], task['output_file_path'],
-#         task['status'], task['file_name'], task['dont_translate_list'], task['input_file_path'], task['output_file_path'])
-#     logger.info(sql_str % data)
-#     with cnx.cursor() as cursor:
-#         cursor.execute(sql_str, data)
-#         task_id = cursor.lastrowid
-#         logger.info(f"new task id: {task_id}")
-#         cnx.commit()
-#         return 0, task_id, "success"
-    
-#     return 1, None, "failed"
-
-
 from kafka import KafkaProducer
 from kafka.errors import KafkaError
 def publish_translate_task(task: Task):
-    # logger.info(f"[publish_translate_task] id={task['task_id']}, md5={task['md5']}, file_name={task['file_name']}, source_language={task['source_language']}, target_language={task['target_language']} ")
     logger.info(f"[publish_translate_task] id={task.id}, md5={task.md5}, file_name={task.file_name}, source_language={task.source_language}, target_language={task.target_language} ")
-    topic_name = 'pptx-translate'
-    kafka_servers = ['localhost:9092']
-    producer = KafkaProducer(bootstrap_servers=kafka_servers)
+    topic_name = KAFKA_CONFIG['topic_pptx']
+    kafka_servers = KAFKA_CONFIG['servers']
+    producer = KafkaProducer(bootstrap_servers=kafka_servers,
+                             max_request_size=1024*1024*1024)
     # Asynchronous by default
     # task.input_file_content = base64.b64encode(task.input_file_content).decode('utf-8')
     # future = producer.send(topic_name, key=b'foo', value=json.dumps(task).encode('utf-8'))
     future = producer.send(topic_name, key=bytes(str(task.id), encoding='ascii'), value=task.to_json().encode('utf-8'))
     try:
-        record_metadata = future.get(timeout=10)
+        record_metadata = future.get(timeout=30)
         # Successful result returns assigned partition and offset
         logger.info(f"record_metadata.topic: {record_metadata.topic}, partition: {record_metadata.partition}, offset: {record_metadata.offset}")
         return True
-    except KafkaError:
-        # Decide what to do if produce request failed...
-        # log.exception()
-        logger.info('KafkaError')
+    except KafkaError as err:
+        logger.info(f'KafkaError: {err}')
         pass
 
 from kafka import KafkaConsumer
 def subscribe_status_update():
     logger.info(f"[subscribe_status_update] start...")
-    topic_name = 'status-update'
+    topic_name = KAFKA_CONFIG['topic_status'] #'status-update'
     group_name = 'group2'
-    kafka_servers = ['localhost:9092']
+    kafka_servers = KAFKA_CONFIG['servers'] #['localhost:9092']
     while True:
         # To consume latest messages and auto-commit offsets
         consumer = KafkaConsumer(topic_name,
@@ -494,48 +340,15 @@ def subscribe_status_update():
             logger.info(f"update task status success")
                 
 
-# def processing_task(task):
-#     cnx = get_connection()
-#     with cnx.cursor() as cursor:
-#         result = cursor.execute(f"UPDATE tasks SET status = 1 WHERE md5 = '{task['md5']}' "
-#                                 f" and source_language = '{task['source_language']}'"
-#                                 f" and target_language = '{task['target_language']}'")
-#         cnx.commit()
-
-# def finish_task(task):
-#     ret = 0
-#     cnx = get_connection()
-#     with cnx.cursor() as cursor:
-#         if 'md5' in task and 'source_language' in task and 'target_language' in task:
-#             result = cursor.execute(f"UPDATE tasks SET status = 2 WHERE md5 = '{task['md5']}'"
-#                                     f" and source_language = '{task['source_language']}'"
-#                                     f" and target_language = '{task['target_language']}'")
-#         elif 'task_id' in task:
-#             result = cursor.execute(f"UPDATE tasks SET status = 2 WHERE task_id = {task['task_id']}")
-#         else:
-#             logger.error(f"task_id or md5, source_language, target_language not found in task")
-#             ret = 1
-#         cnx.commit()
-#         return ret
-
-# def fail_task(task):
-#     ret = 0
-#     cnx = get_connection()
-#     with cnx.cursor() as cursor:
-#         if 'md5' in task and 'source_language' in task and 'target_language' in task:
-#             result = cursor.execute(f"UPDATE tasks SET status = 3 WHERE md5 = '{task['md5']}'"
-#                                     f" and source_language = '{task['source_language']}'"
-#                                     f" and target_language = '{task['target_language']}'")
-#         elif 'task_id' in task:
-#             result = cursor.execute(f"UPDATE tasks SET status = 3 WHERE task_id = {task['task_id']}")
-#         else:
-#             logger.error(f"task_id or md5, source_language, target_language not found in task")
-#             ret = 1
-#         cnx.commit()
-#     return ret
-
-import threading, multiprocessing
+import threading
 if __name__ == "__main__":
+    logger.info(f"KAFKA_CONFIG: {KAFKA_CONFIG}")
+    conn = Task().get_connection()
+    if conn is None:
+        logger.error(f"Failed to connect to MySQL")
+    else:
+        logger.info(f"Connected to MySQL")
+    
     # 线程，订阅状态更新，也可以用多进程或独立进程
     t = threading.Thread(target=subscribe_status_update)
     t.start()
@@ -549,6 +362,6 @@ if __name__ == "__main__":
         pass
 
     webServer.server_close()
-    get_connection().close()
+    # get_connection().close()
     # t.join()
     logger.info("Server stopped.")

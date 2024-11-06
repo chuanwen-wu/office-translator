@@ -1,8 +1,8 @@
-create database office_translator;
+create database if not exists office_translator;
 
 use office_translator;
 
-create table tasks (
+create table if not exists tasks (
     id int auto_increment primary key,
     md5 char(32) not null,
     status int not null default 0 comment '0: pending, 1: processing, 2: completed, 3: failed',
@@ -17,4 +17,4 @@ create table tasks (
     created_at datetime not null default current_timestamp,
     updated_at datetime not null default current_timestamp on update current_timestamp
 );
-ALTER TABLE tasks ADD UNIQUE KEY file_source_language_target_language(md5, source_language, target_language);
+ALTER TABLE tasks ADD UNIQUE KEY md5_source_language_target_language(md5, source_language, target_language);
