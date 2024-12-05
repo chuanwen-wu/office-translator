@@ -108,8 +108,9 @@ class Task:
             sql = f"SELECT * FROM tasks WHERE id = {self.id}"
         elif self.md5 is not None and self.source_language is not None and self.target_language is not None:
             sql = f"SELECT * FROM tasks WHERE md5 = '{self.md5}' AND source_language = '{self.source_language}' AND target_language='{self.target_language}'"
-        else: #todo 出错
-            return None
+        else:
+            logger.error("query error")
+            return False
         rows = self.__db_query(sql)
         logger.info(f"rows: {rows}")
         if len(rows) == 0:
@@ -120,7 +121,7 @@ class Task:
                 self.user_id, self.created_at, self.updated_at = rows[0]
             return True
     
-    def insert(self):
+    def insert_update(self):
         cnx = self.get_connection()
         sql_str = ("INSERT INTO tasks "
             "(md5, status, file_name, source_language, target_language, dont_translate_list, input_file_path, output_file_path) "
@@ -151,6 +152,22 @@ class Task:
         self.status = 3
         return self.update()
 
+    def reset(self):
+        ret = 0
+        cnx = self.get_connection()
+        with cnx.cursor() as cursor:
+            if self.md5 is not None and self.source_language is not None and self.target_language is not None:
+                result = cursor.execute(f"UPDATE tasks SET status = 0 WHERE md5 = '{self.md5}'"
+                                    f" and source_language = '{self.source_language}'"
+                                    f" and target_language = '{self.target_language}'")
+            elif self.id is not None:
+                result = cursor.execute(f"UPDATE tasks SET status = {self.status} WHERE task_id = {self.id}")
+            else:
+                logger.error(f"task_id or md5, source_language, target_language not found in task")
+                ret = 1
+        cnx.commit()
+        return ret
+    
     def update(self):
         ret = 0
         cnx = self.get_connection()

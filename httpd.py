@@ -16,7 +16,6 @@ logger.setLevel(logging.INFO)
 formatter = logging.Formatter("%(asctime)s - %(filename)s:%(lineno)d - %(levelname)s - %(message)s")
 
 # Log to console
-
 handler = logging.StreamHandler()
 handler.setFormatter(formatter)
 logger.addHandler(handler)
@@ -76,11 +75,9 @@ class MyServer(SimpleHTTPRequestHandler):
                 # task = get_task(task_obj)
                 ret = task_obj.query()
                 if ret is True:
-                    self.send_header("Content-type", "application/json")
                     self.send_response(200)
+                    self.send_header("Content-type", "application/json")
                     self.end_headers()
-                    # response = json.dumps(task)
-                    # response = task_obj.to_json()
                     download_file_path = ''
                     if task_obj.status == 2:
                         download_file_path = download_url_prefix + task_obj.output_file_path
@@ -96,6 +93,7 @@ class MyServer(SimpleHTTPRequestHandler):
                     response = json.dumps({
                         'code': 0,
                         'status': task_obj.status,
+                        'task_id': task_obj.id,
                         'message': msg,
                         'download_file_path': download_file_path
                     })
@@ -111,15 +109,6 @@ class MyServer(SimpleHTTPRequestHandler):
             self.path = filename
             super().do_GET()
         else:
-            # super().do_GET()
-            # self.send_response(200)
-            # self.send_header("Content-type", "text/html")
-            # self.end_headers()
-            # self.wfile.write(bytes("<html><head><title>https://pythonbasics.org</title></head>", "utf-8"))
-            # self.wfile.write(bytes("<p>Request: %s</p>" % self.path, "utf-8"))
-            # self.wfile.write(bytes("<body>", "utf-8"))
-            # self.wfile.write(bytes("<p>This is an example web server.</p>", "utf-8"))
-            # self.wfile.write(bytes("</body></html>", "utf-8"))
             self.send_response(404)
             self.send_header("Content-type", "text/plain")
             self.end_headers()
@@ -137,14 +126,15 @@ class MyServer(SimpleHTTPRequestHandler):
             # dont_translate_word_list
             # input_file
             content_type, pdict = parse_header(self.headers.get('content-type'))
-            pdict['boundary'] = bytes(pdict['boundary'], "utf-8")
             if content_type == 'multipart/form-data':
+                pdict['boundary'] = bytes(pdict['boundary'], "utf-8")
                 post_vars = parse_multipart(self.rfile, pdict)
                 # print(f"postvars: {post_vars}")
                 source_lang = post_vars['source_lang'][0]
                 target_lang = post_vars['target_lang'][0]
                 input_file_content = post_vars['file'][0]
                 input_filename = post_vars.get('filename', [''])[0]
+                force = post_vars['force'][0]
                 if not input_filename.endswith('.pptx'):
                     logger.error(f"input_filename must end with .pptx")
                     self.send_response(400)
@@ -154,14 +144,14 @@ class MyServer(SimpleHTTPRequestHandler):
                     self.wfile.write(response.encode())
                     return 0
                 dont_translate_word_list = post_vars['dont_translate_word_list'][0]
-                res = submit_translate_task(source_lang, target_lang, input_file_content, dont_translate_word_list, input_filename)
+                res = submit_translate_task(source_lang, target_lang, input_file_content, dont_translate_word_list, input_filename, force)
                 self.send_response(200)
                 self.send_header("Content-type", "application/json")
                 self.end_headers()
                 response = json.dumps(res)
                 self.wfile.write(response.encode())
                 return 0
-            elif content_type == 'application/json': # todo 未测试
+            elif content_type == 'application/json':
                 req_datas = self.rfile.read(int(self.headers['content-length'])) 
                 post_data = json.loads(req_datas.decode())
                 logger.info(f"post_data: {post_data}")
@@ -170,12 +160,16 @@ class MyServer(SimpleHTTPRequestHandler):
                 if 'source_lang' in post_data and 'target_lang' in post_data and 'input_file_content' in post_data:
                     source_lang = post_data['source_lang']
                     target_lang = post_data['target_lang']
-                    input_file_content = post_data['input_file_content']
-                    if 'dont_translate_word_list' in post_data:
-                        dont_translate_word_list = post_data['dont_translate_word_list']
+                    input_file_content = base64.b64decode(post_data['input_file_content']) 
+                    if 'dont_translate_words' in post_data:
+                        dont_translate_word_list = post_data['dont_translate_words']
                     if 'input_filename' in post_data:
                         input_filename = post_data['input_filename']
-                    res = submit_translate_task(source_lang, target_lang, input_file_content, dont_translate_word_list, input_filename)
+                    if 'force' in post_data:
+                        force = post_data['force']
+                    else:
+                        force = False
+                    res = submit_translate_task(source_lang, target_lang, input_file_content, dont_translate_word_list, input_filename, force)
                     self.send_response(200)
                     self.send_header("Content-type", "application/json")
                     self.end_headers()
@@ -193,7 +187,7 @@ class MyServer(SimpleHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(b'Not Found')
     
-def submit_translate_task(source_lang, target_lang, input_file_content, dont_translate_word_list, input_filename):
+def submit_translate_task(source_lang, target_lang, input_file_content, dont_translate_word_list, input_filename, force=False):
     '''
     提交翻译任务。通过md5判断文件是否重复翻译过，是的话，返回历史文件；
     否则，提交翻译任务，返回task信息
@@ -202,24 +196,29 @@ def submit_translate_task(source_lang, target_lang, input_file_content, dont_tra
     os.makedirs(file_repo_dir, exist_ok=True)
     file_md5 = hashlib.md5(input_file_content).hexdigest()
     task_obj = Task(md5=file_md5, 
-                    file_name=input_filename, 
                     source_language=source_lang, 
                     target_language=target_lang, 
-                    dont_translate_list=dont_translate_word_list,
                     )
-    # task_old = get_task(task_obj)
     ret = task_obj.query()
     if ret is True and task_obj.status != 3:  #任务存在且未失败
+        download_file_path = ''
         logger.info(f"task already exists: {task_obj}")
         msg = "task already exists"
-        download_file_path = ''
         if task_obj.status == 0:
             msg = f"{msg}, and is pending"
         elif task_obj.status == 1:
             msg = f"{msg}, and is processing"
         elif task_obj.status == 2:
-            msg = f"{msg}, and is completed"
-            download_file_path = download_url_prefix + task_obj.output_file_path
+            if not force:
+                msg = f"{msg}, and is completed"
+                download_file_path = download_url_prefix + task_obj.output_file_path
+            else:   # 任务虽然已完成，但强制重新翻译
+                # 更新老task的属性
+                task_obj.file_name = input_filename
+                task_obj.dont_translate_list = dont_translate_word_list
+                task_obj.input_file_content = input_file_content
+                res = insert_update_task(task_obj)
+                return res['code'], res
         else:
             logger.error(f"unknown task status: {task_obj.status}")
             msg = f"{msg}, and is invalid"
@@ -232,41 +231,68 @@ def submit_translate_task(source_lang, target_lang, input_file_content, dont_tra
         }
         return res['code'], res
     else: # 任务不存在或已失败
-        if ret is True and task_obj.status == 3:   #任务存在且已失败
+        task_obj.file_name = input_filename
+        task_obj.dont_translate_list = dont_translate_word_list
+        task_obj.input_file_content = input_file_content
+        if ret is True and task_obj.status == 3:   #任务存在且已失败, 重新翻译
             logger.info(f"task already failed: {task_obj}")
-        else: # 任务不存在
+            res = insert_update_task(task_obj)
+        else: # 任务不存在，翻译
             logger.info(f"task not found, submit new task")
-
-        input_file_path = os.path.join(file_repo_dir, file_md5 + '-' + input_filename)
-        print(f"input_file_path: {input_file_path}")
-        # 写入完整的文件内容
-        with open(input_file_path, 'wb') as f:    
-            f.write(input_file_content)
-        # 再提交数据库
-        task_obj.id = None
-        task_obj.status = 0
-        task_obj.input_file_path = input_file_path
-        # task_obj.output_file_path = os.path.join(time.strftime('%Y%m%d-%H%M%S',time.localtime(time.time())) + '-' + target_lang + "-" + input_filename)
-        task_obj.output_file_path = input_filename.replace('.pptx', 
-            "-{target_lang}-{timestr}.pptx".format(target_lang=target_lang, timestr=time.strftime('%Y%m%d%H%M%S',time.localtime(time.time()))))
-        ret, task_id, msg = task_obj.insert()
-        if ret == 0:
-            task_obj.input_file_content = input_file_content
-            publish_translate_task(task_obj)
-        res = {
-            'code': ret,
-            'status': task_obj.status,
-            'message': msg,
-            'task_id': task_id,
-        }
-
+            res = insert_update_task(task_obj)
+        # input_file_path = os.path.join(file_repo_dir, file_md5 + '-' + input_filename)
+        # print(f"input_file_path: {input_file_path}")
+        # # 写入完整的文件内容
+        # with open(input_file_path, 'wb') as f:    
+        #     f.write(input_file_content)
+        # # 再提交数据库
+        # task_obj.id = None
+        # task_obj.status = 0
+        # task_obj.input_file_path = input_file_path
+        # task_obj.output_file_path = input_filename.replace('.pptx', 
+        #     "-{target_lang}-{timestr}.pptx".format(target_lang=target_lang, timestr=time.strftime('%Y%m%d%H%M%S',time.localtime(time.time()))))
+        # ret, task_id, msg = task_obj.insert_update()
+        # if ret == 0:
+        #     task_obj.input_file_content = input_file_content
+        #     publish_translate_task(task_obj)
+            # res = {
+            #     'code': ret,
+            #     'status': task_obj.status,
+            #     'message': msg,
+            #     'task_id': task_id,
+            # }
         return res['code'], res
 
+def insert_update_task(task_obj):
+    input_file_path = os.path.join(file_repo_dir, task_obj.md5 + '-' + task_obj.file_name)
+    print(f"input_file_path: {input_file_path}")
+    # 写入完整的文件内容
+    with open(input_file_path, 'wb') as f:    
+        f.write(task_obj.input_file_content)
+    # 再提交数据库
+    task_obj.id = None
+    task_obj.status = 0
+    task_obj.input_file_path = input_file_path
+    task_obj.output_file_path = task_obj.file_name.replace(
+        '.pptx', 
+        "-{target_lang}-{timestr}.pptx".
+        format(target_lang=task_obj.target_language, timestr=time.strftime('%Y%m%d%H%M%S',time.localtime(time.time()))))
+    ret, task_id, msg = task_obj.insert_update()
+    if ret == 0:
+        # task_obj.input_file_content = input_file_content
+        publish_translate_task(task_obj)
+    res = {
+        'code': ret,
+        'status': task_obj.status,
+        'message': msg,
+        'task_id': task_id,
+    }
+    return res
 
 from kafka import KafkaProducer
 from kafka.errors import KafkaError
 def publish_translate_task(task: Task):
-    logger.info(f"[publish_translate_task] id={task.id}, md5={task.md5}, file_name={task.file_name}, source_language={task.source_language}, target_language={task.target_language} ")
+    logger.info(f"[publish_translate_task] id={task.id}, file_name={task.file_name}, source_language={task.source_language}, target_language={task.target_language} ")
     topic_name = KAFKA_CONFIG['topic_pptx']
     kafka_servers = KAFKA_CONFIG['servers']
     producer = KafkaProducer(bootstrap_servers=kafka_servers,

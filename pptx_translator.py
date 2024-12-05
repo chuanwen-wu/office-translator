@@ -115,15 +115,28 @@ def contain_chinese(string):
 def get_dont_translate_words(file_path):
     global DONT_TRANSLATE_WORDS
     arr = []
-    with open(file_path) as f:
-        for l in f.readlines():
-            if l.strip().startswith('#'):
-                continue
-            arr.append(l.strip())
+    with open(file_path, "r") as f:
+        text = f.read()
     
-    DONT_TRANSLATE_WORDS = ",".join(arr)
-    return ",".join(arr)
+    return parse_dont_translate_words(text)
 
+'''
+输入text是一段以换行符作为分割符的文本，比如：
+    AWS
+    CDN
+输出:
+    AWS,CDN
+'''
+def parse_dont_translate_words(text: str):
+    global DONT_TRANSLATE_WORDS
+    arr = []
+    for l in text.splitlines():
+        if l.strip().startswith('#'):
+            continue
+        arr.append(l.strip())
+    
+    DONT_TRANSLATE_WORDS = ", ".join(arr)
+    return DONT_TRANSLATE_WORDS
 
 def translate_from_ollama(src, source_language_code, target_language_code):
     source_language = ""
@@ -346,6 +359,10 @@ def subscribe_translate_task():
             logger.info(f"Receive task: id={task['id']}, md5={task['md5']}, source_language={task['source_language']}, target_language={task['target_language']}")
             break
         consumer.close()
+        if 'dont_translate_list' in task and task['dont_translate_list'] != '':
+            parse_dont_translate_words(task['dont_translate_list'])
+        else:
+            get_dont_translate_words(DONT_TRANSLATE_WORDS_FILE)
         ret, output_file_content = translate_pptx_file(task['input_file_content'], task['source_language'], task['target_language'])
         if ret == 0:
             task['status'] = 2  #finished
@@ -384,7 +401,6 @@ def publish_status_update(task):
 def translate_pptx_file(input_file_content, source_language_code, target_language_code):
     ret = 0
     logger.info(f"[translate_pptx_file] source_language_code: {source_language_code}, target_language_code: {target_language_code}")
-    # print(f"input_file_content: {input_file_content}")
     try:
         presentation = Presentation(BytesIO(input_file_content))
     except Exception as err:
@@ -406,3 +422,5 @@ if __name__== '__main__':
     logger.info(f"OLLAMA_CONFIG: {OLLAMA_CONFIG}")
     # run_as_local()
     subscribe_translate_task()
+    # for testing below:
+    # print(get_dont_translate_words(DONT_TRANSLATE_WORDS_FILE))

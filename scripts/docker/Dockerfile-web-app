@@ -1,0 +1,14 @@
+FROM docker.io/library/python:3.11
+LABEL maintainer="Kennethwu"
+
+RUN apt update && apt -y install inetutils-ping netcat-openbsd net-tools
+
+WORKDIR /app/
+COPY requirements.txt /app/requirements.txt
+RUN pip install -r requirements.txt
+
+COPY app.py /app/app.py
+COPY pages /app/pages
+COPY images /app/images
+COPY .streamlit /app/.streamlit
+ENTRYPOINT ["streamlit run app.py", "-b"]

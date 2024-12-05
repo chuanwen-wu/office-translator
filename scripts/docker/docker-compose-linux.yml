@@ -6,7 +6,7 @@ services:
         environment:
             - CONTROLLER_ENDPOINT=http://controller:8080
         entrypoint: ["python", "-m", "streamlit", "run", "app.py"]
-    controller: 
+    controller:
         image: sebalaxi/office-translator:latest
         ports:
             - "8081:8080"
@@ -27,7 +27,7 @@ services:
           - mysql
           - broker
     worker:
-        image: sebalaxi/office-translator
+        image: sebalaxi/office-translator:latest
         container_name: "worker"
         entrypoint: ["python", "pptx_translator.py"]
         restart: unless-stopped
@@ -37,12 +37,12 @@ services:
             - KAFKA_SERVERS=broker:9092
             - KAFKA_TOPIC_PPTX=pptx-translate
             - KAFKA_TOPIC_STATUS_UPDATE=status-update
-            - OLLAMA_URL=http://${host_ip}:11434  # only for mac
+            - OLLAMA_URL=http://ollama:11434  # or use api endpoint of ollama outside
             - TZ=Asia/Shanghai
     mysql:
-        image: mysql:9.1.0
-        ports:
-            - "3306:3306"
+        image: mysql #:8.4.0
+        expose:
+            - 3306
             # - 33060
         volumes:
             - "${PWD}/data/mysql:/var/lib/mysql"
@@ -71,3 +71,21 @@ services:
             - KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1
             - KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS=0
             - KAFKA_NUM_PARTITIONS=1
+    ollama:
+        image: ollama/ollama:latest
+        container_name: ollama
+        expose:
+            - 11434
+        ports:
+            - 11434:11434
+        environment:
+            - OLLAMA_HOST=0.0.0.0:11434
+        volumes:
+            - "${PWD}/data/ollama:/root/.ollama"
+        deploy:
+            resources:
+                reservations:
+                    devices:
+                        - driver: nvidia
+                          count: all
+                          capabilities: [gpu]
