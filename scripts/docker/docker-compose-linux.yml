@@ -53,7 +53,7 @@ services:
         container_name: "mysql"
 
     broker:
-        image: apache/kafka:latest
+        image: apache/kafka:3.8.1
         container_name: broker
         expose:
             - 9092

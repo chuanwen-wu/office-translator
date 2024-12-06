@@ -1,4 +1,4 @@
-python-pptx
-requests
-mysql-connector-python
-kafka-python
+python-pptx==1.0.2
+requests==2.32.3
+mysql-connector-python==9.1.0
+kafka-python==2.0.2
