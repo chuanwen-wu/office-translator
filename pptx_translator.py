@@ -180,12 +180,14 @@ Please keeping these phrases unchanged: {DONT_TRANSLATE_WORDS}."
     # url = 'http://localhost:11434/api/generate'
     # url = 'http://localhost:11434/api/chat'
     url = f"{OLLAMA_CONFIG['url']}/api/chat"
-    response = requests.post(url, data=data)
-    # logger.info(response.text)
-    body = json.loads(response.text)
-    # logger.info(f"{src} -> {body['response']}")
-    logger.info(f"{src} --> {body['message']['content']}")
-    return body['message']['content']
+    resp = requests.post(url, data=data)
+    if resp.status_code == 200:
+    # logger.info(resp.text)
+        body = json.loads(resp.text)
+        logger.info(f"{src} --> {body['message']['content']}")
+        return body['message']['content']
+    else: # http code != 200
+        raise Exception(f'ollama resp error, status_code={resp.status_code}')
 
 
 def delete_run(run):

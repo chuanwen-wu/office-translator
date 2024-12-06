@@ -154,7 +154,10 @@ class MyServer(SimpleHTTPRequestHandler):
             elif content_type == 'application/json':
                 req_datas = self.rfile.read(int(self.headers['content-length'])) 
                 post_data = json.loads(req_datas.decode())
-                logger.info(f"post_data: {post_data}")
+                # 昂贵的操作
+                tmp = post_data.copy()
+                del tmp['input_file_content']
+                logger.info(f"post_data: {tmp}")
                 dont_translate_word_list = ''
                 input_filename = "default.pptx"
                 if 'source_lang' in post_data and 'target_lang' in post_data and 'input_file_content' in post_data:

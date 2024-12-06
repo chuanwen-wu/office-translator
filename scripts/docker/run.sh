@@ -1,7 +1,10 @@
 #!/bin/bash
-export MYSQL_ROOT_PASSWORD=a
-export DB_USER=root
-export DB_PASSWORD=a    
+source .secret
+
+if [[ '' == $DB_USER || '' == $MYSQL_ROOT_PASSWORD || '' == $DB_PASSWORD ]]; then
+    echo "Env of DB_USER, MYSQL_ROOT_PASSWORD, DB_PASSWORD not found, exit"
+    exit 1
+fi
 
 os=$(uname)
 
@@ -77,6 +80,9 @@ echo "init db..."
 sql=$(cat db/init.sql)
 docker-compose exec -it mysql mysql -u ${DB_USER} -p${DB_PASSWORD} -e "$sql"
 
+if [[ 'Linux' == $os ]]; then
+    docker-compose up ollama -d
+fi
 docker-compose up controller -d
 docker-compose up worker -d
 docker-compose up web-app -d
