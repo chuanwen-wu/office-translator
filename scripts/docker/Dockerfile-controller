@@ -1,12 +1,9 @@
-FROM docker.io/library/python:3.11
+FROM docker.io/library/python:3.11-alpine
+
 LABEL maintainer="Kennethwu"
 
-RUN apt update && apt -y install inetutils-ping netcat-openbsd net-tools
-#RUN mkdir /usr/local/blender-3.5.0
-#ADD blender-3.5.0-linux-x64 /usr/local/blender-3.5.0
-#RUN ln -s /usr/local/blender-3.5.0/blender /usr/bin/blender
-
-# ENTRYPOINT ["/usr/local/blender/blender", "-b"]
+# RUN apt update && apt -y install inetutils-ping netcat-openbsd net-tools
+# RUN apk update && apk add netcat-openbsd 
 
 WORKDIR /app/
 COPY requirements.txt /app/requirements.txt

@@ -1,8 +1,11 @@
 services:
     web-app:
         image: sebalaxi/office-translator-web-app:latest 
+        container_name: "web-app"
         ports: 
             - "8080:8501"
+        volumes:
+            - "${PWD}/data/file_repo:/app/file_repo"
         environment:
             - CONTROLLER_ENDPOINT=http://controller:8080
         entrypoint: ["python", "-m", "streamlit", "run", "app.py"]
@@ -53,7 +56,7 @@ services:
         container_name: "mysql"
 
     broker:
-        image: apache/kafka:latest
+        image: apache/kafka:3.8.1
         container_name: broker
         expose:
             - 9092

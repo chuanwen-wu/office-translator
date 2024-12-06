@@ -76,6 +76,10 @@ def submit_task(filename, file_content, source_name, target_name, dont_translate
     resp = requests.post(f"{CONTROLLER_ENDPOINT}/ppt-translate", json = data, headers=headers)
     return resp
 
+# http://localhost:8080/download/input-zh-20241206194605.pptx  ---> input-zh-20241206194605.pptx
+def get_output_filename(download_file_path):
+    return download_file_path.split('/')[-1]
+
 def try_submit_task(force:bool = False):
     logger.debug("[try_submit_task]")
     st.session_state['task'] = {}
@@ -116,7 +120,8 @@ def try_submit_task(force:bool = False):
                         'status': 2,
                         'msg': "该PPT已被翻译过，立即下载，或重新翻译",
                         'task_id': data['task_id'],
-                        'download_file_path': data['download_file_path']
+                        'download_file_path': data['download_file_path'],
+                        'output_filename': get_output_filename(data['download_file_path'])
                     }
                 elif data['status'] == 0:
                     st.session_state['task'] = {
@@ -160,7 +165,8 @@ def query_task(task_id):
                     'status': 3,  # status 3跟2其实是一样数据库结果，但对应用户的操作不同
                     'msg': "翻译已完成",
                     'task_id': data['task_id'],
-                    'download_file_path': data['download_file_path']
+                    'download_file_path': data['download_file_path'],
+                    'output_filename': get_output_filename(data['download_file_path'])
                 }
             elif data['status'] == 0:
                 st.session_state['task'] = {
@@ -212,9 +218,13 @@ with resp_container:
         elif task['status'] == 2:
             left, middle, right = st.columns([4, 2, 2])
             left.write(f"该PPT已被翻译过， id={task['task_id']}")
-            middle.link_button("立即下载", task['download_file_path'], use_container_width=True)
+            with open(f"file_repo/done/{task['output_filename']}", "rb") as f:
+                middle.download_button(label='立即下载', data=f, mime='application/octet-stream', file_name=task['output_filename'])
+            # middle.link_button("立即下载", task['download_file_path'], use_container_width=True)
             right.button("重新翻译", use_container_width=True, on_click=try_submit_task, kwargs={"force":True})
         elif task['status'] == 3:
             left, right = st.columns([4, 2])
             left.write(f"翻译已完成， id={task['task_id']}")
-            right.link_button("立即下载", task['download_file_path'], use_container_width=True)
+            # right.link_button("立即下载", task['download_file_path'], use_container_width=True)
+            with open(f"file_repo/done/{task['output_filename']}", "rb") as f:
+                right.download_button(label='立即下载', data=f, mime='application/octet-stream', file_name=task['output_filename'])

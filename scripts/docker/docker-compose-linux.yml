@@ -1,7 +1,8 @@
 services:
     web-app:
-        image: sebalaxi/office-translator-web-app:latest 
-        ports: 
+        image: sebalaxi/office-translator-web-app:latest
+        container_name: "web-app"
+        ports:
             - "8080:8501"
         environment:
             - CONTROLLER_ENDPOINT=http://controller:8080
