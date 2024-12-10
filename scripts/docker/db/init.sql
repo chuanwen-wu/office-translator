@@ -14,7 +14,9 @@ create table if not exists tasks (
     output_file_path varchar(255),
     callback_url varchar(4096),
     user_id varchar(255),
+    error_msg varchar(1024),
     created_at datetime not null default current_timestamp,
     updated_at datetime not null default current_timestamp on update current_timestamp
 );
 ALTER TABLE tasks ADD UNIQUE KEY md5_source_language_target_language(md5, source_language, target_language);
+ALTER TABLE tasks ADD error_msg varchar(1024);

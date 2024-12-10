@@ -8,6 +8,7 @@ services:
             - "${PWD}/data/file_repo:/app/file_repo"
         environment:
             - CONTROLLER_ENDPOINT=http://controller:8080
+            - TZ=Asia/Shanghai
         entrypoint: ["python", "-m", "streamlit", "run", "app.py"]
     controller: 
         image: sebalaxi/office-translator:latest
@@ -15,6 +16,7 @@ services:
             - "8081:8080"
         volumes:
             - "${PWD}/data/file_repo:/app/file_repo"
+        restart: unless-stopped
         environment:
             - DB_HOST=mysql
             - DB_USER=${DB_USER}
@@ -26,9 +28,9 @@ services:
             - TZ=Asia/Shanghai
         container_name: "controller"
         entrypoint: ["python", "httpd.py"]
-        depends_on:
-          - mysql
-          - broker
+        # depends_on:
+        #   - mysql
+        #   - broker
     worker:
         image: sebalaxi/office-translator
         container_name: "worker"
@@ -53,6 +55,7 @@ services:
         environment:
             - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
             - MYSQL_DATABASE=office_translator
+            - TZ=Asia/Shanghai
         container_name: "mysql"
 
     broker:
@@ -74,3 +77,4 @@ services:
             - KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1
             - KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS=0
             - KAFKA_NUM_PARTITIONS=1
+            - TZ=Asia/Shanghai

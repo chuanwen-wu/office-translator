@@ -25,7 +25,7 @@ logger.info(f"DB_CONFIG: {DB_CONFIG}")
 class Task:
     def __init__(self, id=None, md5=None, status=None, file_name=None, source_language=None, target_language=None, 
                  dont_translate_list=None, input_file_path=None, output_file_path=None, callback_url=None, 
-                 user_id=None, created_at=None, updated_at=None, input_file_content = None, output_file_content=None):
+                 user_id=None, created_at=None, updated_at=None, input_file_content = None, output_file_content=None, error_msg=''):
         self.id = id
         self.md5 = md5
         self.status = status
@@ -42,6 +42,7 @@ class Task:
         self.db_conn = None
         self.input_file_content = input_file_content
         self.output_file_content = output_file_content
+        self.error_msg = error_msg
 
     def __del__(self):
         if self.db_conn is not None and self.db_conn.is_connected():
@@ -105,9 +106,9 @@ class Task:
     
     def query(self):
         if self.id is not None:
-            sql = f"SELECT * FROM tasks WHERE id = {self.id}"
+            sql = f"SELECT id, md5, status, file_name, source_language, target_language, dont_translate_list, input_file_path, output_file_path, callback_url, user_id, error_msg, created_at, updated_at FROM tasks WHERE id = {self.id}"
         elif self.md5 is not None and self.source_language is not None and self.target_language is not None:
-            sql = f"SELECT * FROM tasks WHERE md5 = '{self.md5}' AND source_language = '{self.source_language}' AND target_language='{self.target_language}'"
+            sql = f"SELECT id, md5, status, file_name, source_language, target_language, dont_translate_list, input_file_path, output_file_path, callback_url, user_id, error_msg, created_at, updated_at FROM tasks WHERE md5 = '{self.md5}' AND source_language = '{self.source_language}' AND target_language='{self.target_language}'"
         else:
             logger.error("query error")
             return False
@@ -118,21 +119,18 @@ class Task:
         else:
             self.id, self.md5, self.status, self.file_name, self.source_language, self.target_language, \
                 self.dont_translate_list, self.input_file_path, self.output_file_path, self.callback_url, \
-                self.user_id, self.created_at, self.updated_at = rows[0]
+                self.user_id, self.error_msg, self.created_at, self.updated_at = rows[0]
             return True
     
     def insert_update(self):
         cnx = self.get_connection()
         sql_str = ("INSERT INTO tasks "
-            "(md5, status, file_name, source_language, target_language, dont_translate_list, input_file_path, output_file_path) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)"
-            " ON DUPLICATE KEY UPDATE status=%s, file_name=%s, dont_translate_list=%s,input_file_path=%s, output_file_path=%s")
-        # data = (task['md5'], task['status'], task['file_name'], task['source_language'], task['target_language'], 
-        #     task['dont_translate_list'], task['input_file_path'], task['output_file_path'],
-        #     task['status'], task['file_name'], task['dont_translate_list'], task['input_file_path'], task['output_file_path'])
+            "(md5, status, file_name, source_language, target_language, dont_translate_list, input_file_path, output_file_path, error_msg) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)"
+            " ON DUPLICATE KEY UPDATE status=%s, file_name=%s, dont_translate_list=%s,input_file_path=%s, output_file_path=%s, error_msg=%s")
         data = (self.md5, self.status, self.file_name, self.source_language, self.target_language, 
-            self.dont_translate_list, self.input_file_path, self.output_file_path,
-            self.status, self.file_name, self.dont_translate_list, self.input_file_path, self.output_file_path)
+            self.dont_translate_list, self.input_file_path, self.output_file_path, self.error_msg,
+            self.status, self.file_name, self.dont_translate_list, self.input_file_path, self.output_file_path, self.error_msg)
         logger.info(sql_str % data)
         with cnx.cursor() as cursor:
             cursor.execute(sql_str, data)
@@ -161,28 +159,28 @@ class Task:
                                     f" and source_language = '{self.source_language}'"
                                     f" and target_language = '{self.target_language}'")
             elif self.id is not None:
-                result = cursor.execute(f"UPDATE tasks SET status = {self.status} WHERE task_id = {self.id}")
+                result = cursor.execute(f"UPDATE tasks SET status = {self.status} WHERE id = {self.id}")
             else:
-                logger.error(f"task_id or md5, source_language, target_language not found in task")
+                logger.error(f"id or md5, source_language, target_language not found in task")
                 ret = 1
         cnx.commit()
         return ret
     
     def update(self):
-        ret = 0
         cnx = self.get_connection()
+        if self.id is not None:
+            sql_str = (f"UPDATE tasks SET status=%s, error_msg=%s WHERE id=%s")
+            data = (self.status, self.error_msg, self.id)
+        elif self.md5 is not None and self.source_language is not None and self.target_language is not None:
+            sql_str = (f"UPDATE tasks SET status=%s, error_msg=%s WHERE md5=%s and source_language=%s and target_language=%s")
+            data = (self.status, self.error_msg, self.md5, self.source_language, self.target_language)
+        else:
+            return 1
+        logger.info(sql_str % data)
         with cnx.cursor() as cursor:
-            if self.md5 is not None and self.source_language is not None and self.target_language is not None:
-                result = cursor.execute(f"UPDATE tasks SET status = {self.status} WHERE md5 = '{self.md5}'"
-                                    f" and source_language = '{self.source_language}'"
-                                    f" and target_language = '{self.target_language}'")
-            elif self.id is not None:
-                result = cursor.execute(f"UPDATE tasks SET status = {self.status} WHERE task_id = {self.id}")
-            else:
-                logger.error(f"task_id or md5, source_language, target_language not found in task")
-                ret = 1
-        cnx.commit()
-        return ret
+            cursor.execute(sql_str, data)
+            cnx.commit()
+            return 0
 
     def to_json(self):
         return json.dumps({
@@ -234,4 +232,6 @@ class Task:
             obj.input_file_content = arr['input_file_content']
         if 'output_file_content' in arr:
             obj.output_file_content = arr['output_file_content']
+        if 'error_msg' in arr:
+            obj.error_msg = arr['error_msg']
         return obj

@@ -21,70 +21,27 @@ OLLAMA_CONFIG = {
     'url': os.getenv('OLLAMA_URL', 'http://localhost:11434')
 }
 
-LANGUAGE_CODE_TO_LANGUAGE_ID = {
-"""
-Dict that maps Amazon Translate language code to MSO_LANGUAGE_ID enum value.
+# 这里跳过，原因是subscribe_translate_task 如果连接kafka异常，以抛异常退出
+def check_kafka():
+    return True
 
-- Amazon Translate language codes: https://docs.aws.amazon.com/translate/latest/dg/what-is.html#what-is-languages
-- python-pptx MSO_LANGUAGE_ID enum: https://python-pptx.readthedocs.io/en/latest/api/enum/MsoLanguageId.html
-
-python-pptx doesn't support:
-    - Azerbaijani (az)
-    - Persian (fa)
-    - Dari (fa-AF)
-    - Tagalog (tl)
-"""
-    'af': MSO_LANGUAGE_ID.AFRIKAANS,
-    'am': MSO_LANGUAGE_ID.AMHARIC,
-    'ar': MSO_LANGUAGE_ID.ARABIC,
-    'bg': MSO_LANGUAGE_ID.BULGARIAN,
-    'bn': MSO_LANGUAGE_ID.BENGALI,
-    'bs': MSO_LANGUAGE_ID.BOSNIAN,
-    'cs': MSO_LANGUAGE_ID.CZECH,
-    'da': MSO_LANGUAGE_ID.DANISH,
-    'de': MSO_LANGUAGE_ID.GERMAN,
-    'el': MSO_LANGUAGE_ID.GREEK,
-    'en': MSO_LANGUAGE_ID.ENGLISH_US,
-    'es': MSO_LANGUAGE_ID.SPANISH,
-    'et': MSO_LANGUAGE_ID.ESTONIAN,
-    'fi': MSO_LANGUAGE_ID.FINNISH,
-    'fr': MSO_LANGUAGE_ID.FRENCH,
-    'fr-CA': MSO_LANGUAGE_ID.FRENCH_CANADIAN,
-    'ha': MSO_LANGUAGE_ID.HAUSA,
-    'he': MSO_LANGUAGE_ID.HEBREW,
-    'hi': MSO_LANGUAGE_ID.HINDI,
-    'hr': MSO_LANGUAGE_ID.CROATIAN,
-    'hu': MSO_LANGUAGE_ID.HUNGARIAN,
-    'id': MSO_LANGUAGE_ID.INDONESIAN,
-    'it': MSO_LANGUAGE_ID.ITALIAN,
-    'ja': MSO_LANGUAGE_ID.JAPANESE,
-    'ka': MSO_LANGUAGE_ID.GEORGIAN,
-    'ko': MSO_LANGUAGE_ID.KOREAN,
-    'lv': MSO_LANGUAGE_ID.LATVIAN,
-    'ms': MSO_LANGUAGE_ID.MALAYSIAN,
-    'nl': MSO_LANGUAGE_ID.DUTCH,
-    'no': MSO_LANGUAGE_ID.NORWEGIAN_BOKMOL,
-    'pl': MSO_LANGUAGE_ID.POLISH,
-    'ps': MSO_LANGUAGE_ID.PASHTO,
-    'pt': MSO_LANGUAGE_ID.BRAZILIAN_PORTUGUESE,
-    'ro': MSO_LANGUAGE_ID.ROMANIAN,
-    'ru': MSO_LANGUAGE_ID.RUSSIAN,
-    'sk': MSO_LANGUAGE_ID.SLOVAK,
-    'sl': MSO_LANGUAGE_ID.SLOVENIAN,
-    'so': MSO_LANGUAGE_ID.SOMALI,
-    'sq': MSO_LANGUAGE_ID.ALBANIAN,
-    'sr': MSO_LANGUAGE_ID.SERBIAN_LATIN,
-    'sv': MSO_LANGUAGE_ID.SWEDISH,
-    'sw': MSO_LANGUAGE_ID.SWAHILI,
-    'ta': MSO_LANGUAGE_ID.TAMIL,
-    'th': MSO_LANGUAGE_ID.THAI,
-    'tr': MSO_LANGUAGE_ID.TURKISH,
-    'uk': MSO_LANGUAGE_ID.UKRAINIAN,
-    'ur': MSO_LANGUAGE_ID.URDU,
-    'vi': MSO_LANGUAGE_ID.VIETNAMESE,
-    'zh': MSO_LANGUAGE_ID.CHINESE_SINGAPORE,
-    'zh-TW': MSO_LANGUAGE_ID.CHINESE_HONG_KONG_SAR,
-}
+def check_ollama():
+    logger.info(f"OLLAMA_URL: {OLLAMA_CONFIG['url']}")
+    try:
+        resp = requests.head(OLLAMA_CONFIG['url'])
+        logger.debug(f"status_code: {resp.status_code}")
+        logger.debug(f"text: {resp.text}")
+        logger.debug(f"content: {resp.content}")
+        logger.debug(f"header: {resp.headers}")
+        if resp.status_code == 200:
+            logger.info("running normally: head return 200")
+            return True
+        else:
+            raise Exception(f'ollama resp error, status_code={resp.status_code}')
+    except Exception as err:
+        logger.error(f"Unexpected {err=}, {type(err)=}")
+        logger.error(f"connect ollama endpoint failed: {OLLAMA_CONFIG['url']}")
+        return False
 
 # TERMINOLOGY_NAME = 'pptx-translator-terminology'
 DONT_TRANSLATE_WORDS_FILE = f"./dont-translate-word.txt"
@@ -99,6 +56,7 @@ formatter = logging.Formatter("%(asctime)s - %(filename)s:%(lineno)d - %(levelna
 handler = logging.StreamHandler()
 handler.setFormatter(formatter)
 logger.addHandler(handler)
+
 def contain_chinese(string):
     """
     检查整个字符串是否包含中文
@@ -110,7 +68,6 @@ def contain_chinese(string):
             return True
  
     return False
-
 
 def get_dont_translate_words(file_path):
     global DONT_TRANSLATE_WORDS
@@ -173,8 +130,6 @@ Please keeping these phrases unchanged: {DONT_TRANSLATE_WORDS}."
             {"role": "user", "content": f"{src}"}
         ]
     }
-    # logger.info(temp)
-
     data = json.dumps(temp)
     logger.info(f'temp: {data}')
     # url = 'http://localhost:11434/api/generate'
@@ -187,7 +142,7 @@ Please keeping these phrases unchanged: {DONT_TRANSLATE_WORDS}."
         logger.info(f"{src} --> {body['message']['content']}")
         return body['message']['content']
     else: # http code != 200
-        raise Exception(f'ollama resp error, status_code={resp.status_code}')
+        raise Exception(f'ollama resp error, status_code={resp.status_code}, text={resp.text}')
 
 
 def delete_run(run):
@@ -211,8 +166,8 @@ def translate_text_frame(text_frame, source_language_code, target_language_code,
                 logger.info(f"not chinese: {paraText}")
                 continue
 
-            reponse_text = translate_from_ollama(paraText.strip(), source_language_code, target_language_code)
-            paragraph.runs[0].text = reponse_text
+            response_text = translate_from_ollama(paraText.strip(), source_language_code, target_language_code)
+            paragraph.runs[0].text = response_text
             size = len(paragraph.runs)
             index = size - 1
             while index > 0:
@@ -233,6 +188,7 @@ def translate_text_frame(text_frame, source_language_code, target_language_code,
             # paragraph.runs[index].font.language_id = LANGUAGE_CODE_TO_LANGUAGE_ID[target_language_code]
         except Exception as err:
             logger.error(f"Unexpected {err=}, {type(err)=}")
+            raise err
 
 def translate_table(table, source_language_code, target_language_code, terminology_names):
     for row in table.rows:
@@ -265,12 +221,11 @@ def translate_presentation(presentation, source_language_code, target_language_c
         slide_number += 1
 
         # 尚不支持smartArt
-
-        # translate comments
-        if slide.has_notes_slide:
-            text_frame = slide.notes_slide.notes_text_frame
-            if len(text_frame.text) > 0:
-                try:
+        try:
+            # translate comments
+            if slide.has_notes_slide:
+                text_frame = slide.notes_slide.notes_text_frame
+                if len(text_frame.text) > 0:
                     logger.info(f"notes: {text_frame.text}")
                     # slide.notes_slide.notes_text_frame.text = text_frame.text
                     # response = translate.translate_text(
@@ -281,22 +236,14 @@ def translate_presentation(presentation, source_language_code, target_language_c
                     # slide.notes_slide.notes_text_frame.text = response.get('TranslatedText')
                     response_str = translate_from_ollama(slide.notes_slide.notes_text_frame.text, source_language_code, target_language_code)
                     slide.notes_slide.notes_text_frame.text = response_str
-                except Exception as err:
-                    logger.error(f"Unexpected err: {err}, {type(err)}")
 
-        # translate other texts
-        for shape in slide.shapes:
-            translate_shape(shape, source_language_code, target_language_code, terminology_names)
-
-
-# def import_terminology(terminology_file_path):
-#     print('Importing terminology data from {file_path}...'.format(file_path=terminology_file_path))
-#     with open(terminology_file_path, 'rb') as f:
-#         translate.import_terminology(Name=TERMINOLOGY_NAME,
-#                                      MergeStrategy='OVERWRITE',
-#                                      TerminologyData={'File': bytearray(f.read()), 'Format': 'CSV'})
-
-
+            # translate body
+            for shape in slide.shapes:
+                translate_shape(shape, source_language_code, target_language_code, terminology_names)
+        except Exception as err:
+            logger.error(f"Unexpected err: {err}, {type(err)}")
+            raise err
+    
 def run_as_local():
     argument_parser = argparse.ArgumentParser(
             'Translates pptx files from source language to target language using LLM')
@@ -351,7 +298,7 @@ def subscribe_translate_task():
         logger.info(f"Waiting for task...")
         for message in consumer:
             # message value and key are raw bytes -- decode if necessary!
-        # e.g., for unicode: `message.value.decode('utf-8')`
+            # e.g., for unicode: `message.value.decode('utf-8')`
             # print("%s:%d:%d: key=%s value=%s" % (message.topic, message.partition,
             #                                   message.offset, message.key,
             #                                   message.value))
@@ -361,6 +308,15 @@ def subscribe_translate_task():
             logger.info(f"Receive task: id={task['id']}, md5={task['md5']}, source_language={task['source_language']}, target_language={task['target_language']}")
             break
         consumer.close()
+        # task['status'] = 1 #processing
+        publish_status_update({
+            'id': task['id'],
+            'status': 1,
+            'source_language': task['source_language'],
+            'target_language': task['target_language'],
+            'md5': task['md5']
+        })
+
         if 'dont_translate_list' in task and task['dont_translate_list'] != '':
             parse_dont_translate_words(task['dont_translate_list'])
         else:
@@ -369,27 +325,28 @@ def subscribe_translate_task():
         if ret == 0:
             task['status'] = 2  #finished
             task['output_file_content'] = output_file_content
-        else: #todo error
-            task['status'] = 3  #error
+        else: #error
+            err = output_file_content
+            logger.error(f"translate_pptx_file failed: ret={ret}, err={err}")
+            task['status'] = 3
+            task['error_msg'] = err
 
         del task['input_file_content']
 
-        # publish status update todo
         publish_status_update(task)
 
 from kafka import KafkaProducer
 from kafka.errors import KafkaError
 def publish_status_update(task):
+    logger.info(f"[publish_status_update]: id={task['id']}, status={task['status']}")
+
     topic_name = KAFKA_CONFIG['topic_status'] #'status-update'
     kafka_servers = KAFKA_CONFIG['servers'] #['localhost:9092']
-    producer = KafkaProducer(bootstrap_servers=kafka_servers,
-                             max_request_size=1024*1024*1024)
+    producer = KafkaProducer(bootstrap_servers=kafka_servers, max_request_size=1024*1024*1024)
+    if task['status'] == 2:
+        task['output_file_content'] = base64.b64encode(task['output_file_content']).decode('utf-8')
     # Asynchronous by default
-    task['output_file_content'] = base64.b64encode(task['output_file_content']).decode('utf-8')
-    # print(f"json.dumps(task): {json.dumps(task).encode('utf-8')}")
-    # future = producer.send(topic_name, json.dumps(task).encode('utf-8'))
     future = producer.send(topic_name, key=bytes(str(task['id']), encoding='ascii'), value=json.dumps(task).encode('utf-8'))
-    logger.info(f"[publish_status_update]: id={task['id']}, status={task['status']}, md5={task['md5']}, source_language={task['source_language']}, target_language={task['target_language']}")
     # Block for 'synchronous' sends
     try:
         record_metadata = future.get(timeout=10)
@@ -400,6 +357,10 @@ def publish_status_update(task):
         logger.info(f'KafkaError: {err}')
         pass
 
+# return (ret, output_file_content)
+# ret =0 表示成功；
+# ret=1表示输入文件有错误；
+# ret=2表示翻译过程出错
 def translate_pptx_file(input_file_content, source_language_code, target_language_code):
     ret = 0
     logger.info(f"[translate_pptx_file] source_language_code: {source_language_code}, target_language_code: {target_language_code}")
@@ -407,21 +368,28 @@ def translate_pptx_file(input_file_content, source_language_code, target_languag
         presentation = Presentation(BytesIO(input_file_content))
     except Exception as err:
         ret = 1
-        logger.error(f"Unexpected {err=}, {type(err)=}")
-        return ret, None
+        logger.error(f"Unexpected {err}, {type(err)}")
+        return ret, str(err)
     try:
         translate_presentation(presentation, source_language_code, target_language_code, None)
         output_file_content = BytesIO()
         presentation.save(output_file_content)
         return ret, output_file_content.getvalue()
     except Exception as err:
-        ret = -1
-        logger.error(f"Unexpected {err=}, {type(err)=}")
-        return ret, None
+        ret = 2
+        logger.error(f"Unexpected {err}, {type(err)}")
+        return ret, str(err)
 
+
+def init_check():
+    if not check_ollama():
+        exit(1)
+    if not check_kafka():
+        exit(2)
 
 if __name__== '__main__':
     logger.info(f"OLLAMA_CONFIG: {OLLAMA_CONFIG}")
+    init_check()
     # run_as_local()
     subscribe_translate_task()
     # for testing below:

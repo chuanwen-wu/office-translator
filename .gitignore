@@ -2,3 +2,5 @@
 .DS_Store
 .secret
 data/
+venv
+scripts/test

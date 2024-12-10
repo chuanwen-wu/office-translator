@@ -8,8 +8,12 @@ import hashlib
 import os
 from task import Task
 from io import BytesIO
-import mysql.connector
 import logging
+import traceback
+from kafka import KafkaProducer
+from kafka import KafkaConsumer
+from kafka.errors import KafkaError
+from kafka.errors import NoBrokersAvailable
 # Set up logger
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -72,7 +76,6 @@ class MyServer(SimpleHTTPRequestHandler):
             if task_id or md5:
                 task_obj = Task(id=task_id, md5=md5, source_language=source_language, target_language=target_language)
                 logger.info(f"task_obj: {task_obj}")
-                # task = get_task(task_obj)
                 ret = task_obj.query()
                 if ret is True:
                     self.send_response(200)
@@ -87,7 +90,7 @@ class MyServer(SimpleHTTPRequestHandler):
                     elif task_obj.status == 0:
                         msg = 'pending'
                     elif task_obj.status == 3:
-                        msg = 'failed'
+                        msg = task_obj.error_msg
                     else:
                         msg = 'unknown'
                     response = json.dumps({
@@ -237,33 +240,13 @@ def submit_translate_task(source_lang, target_lang, input_file_content, dont_tra
         task_obj.file_name = input_filename
         task_obj.dont_translate_list = dont_translate_word_list
         task_obj.input_file_content = input_file_content
-        if ret is True and task_obj.status == 3:   #任务存在且已失败, 重新翻译
-            logger.info(f"task already failed: {task_obj}")
+        if ret is True and task_obj.status == 3:   #任务存在且已失败, 自动重新翻译
+            logger.info(f"restart task which failed: {task_obj}")
             res = insert_update_task(task_obj)
         else: # 任务不存在，翻译
             logger.info(f"task not found, submit new task")
             res = insert_update_task(task_obj)
-        # input_file_path = os.path.join(file_repo_dir, file_md5 + '-' + input_filename)
-        # print(f"input_file_path: {input_file_path}")
-        # # 写入完整的文件内容
-        # with open(input_file_path, 'wb') as f:    
-        #     f.write(input_file_content)
-        # # 再提交数据库
-        # task_obj.id = None
-        # task_obj.status = 0
-        # task_obj.input_file_path = input_file_path
-        # task_obj.output_file_path = input_filename.replace('.pptx', 
-        #     "-{target_lang}-{timestr}.pptx".format(target_lang=target_lang, timestr=time.strftime('%Y%m%d%H%M%S',time.localtime(time.time()))))
-        # ret, task_id, msg = task_obj.insert_update()
-        # if ret == 0:
-        #     task_obj.input_file_content = input_file_content
-        #     publish_translate_task(task_obj)
-            # res = {
-            #     'code': ret,
-            #     'status': task_obj.status,
-            #     'message': msg,
-            #     'task_id': task_id,
-            # }
+        
         return res['code'], res
 
 def insert_update_task(task_obj):
@@ -292,8 +275,6 @@ def insert_update_task(task_obj):
     }
     return res
 
-from kafka import KafkaProducer
-from kafka.errors import KafkaError
 def publish_translate_task(task: Task):
     logger.info(f"[publish_translate_task] id={task.id}, file_name={task.file_name}, source_language={task.source_language}, target_language={task.target_language} ")
     topic_name = KAFKA_CONFIG['topic_pptx']
@@ -313,70 +294,96 @@ def publish_translate_task(task: Task):
         logger.info(f'KafkaError: {err}')
         pass
 
-from kafka import KafkaConsumer
 def subscribe_status_update():
     logger.info(f"[subscribe_status_update] start...")
     topic_name = KAFKA_CONFIG['topic_status'] #'status-update'
     group_name = 'group2'
     kafka_servers = KAFKA_CONFIG['servers'] #['localhost:9092']
     while True:
-        # To consume latest messages and auto-commit offsets
-        consumer = KafkaConsumer(topic_name,
-                                 group_id=group_name,
-                                 bootstrap_servers=kafka_servers,
-                                 enable_auto_commit=True,
-                                 max_poll_records=1)
-        for message in consumer:
-            # message value and key are raw bytes -- decode if necessary!
-            # e.g., for unicode: `message.value.decode('utf-8')`
-            # print("%s:%d:%d: key=%s" % (message.topic, message.partition, message.offset, message.key))
-            # logger.info("%s:%d:%d: key=%s" % (message.topic, message.partition, message.offset, message.key))
-            task = json.loads(message.value.decode('utf-8'))
-            logger.info(f"task update: id={task['id']}, status={task['status']}, md5={task['md5']}, source_language={task['source_language']}, target_language={task['target_language']}")
-            break
-        consumer.close()
-        
-        # update task status in database and file
-        ret = 1
-        # task_obj = Task(id=task['task_id'], status=task['status'], md5=task['md5'], source_language=task['source_language'], target_language=task['target_language'])
-        task_obj = Task.from_dict(task)
-        # if 'md5' in task and 'source_language' in task and 'target_language' in task:
-        if task_obj.md5 is not None and task_obj.source_language is not None and task_obj.target_language is not None:
-            # task_status = task['status']
-            if task_obj.status == 2: # 成功
-                # 写输出文件
-                # if 'output_file_path' in task and 'output_file_content' in task: # 有输出文件
-                if task_obj.output_file_path is not None and task_obj.output_file_content is not None:
-                    file_path = os.path.join(done_repo_dir, task_obj.output_file_path)
-                    logger.info(f"write output file to: {file_path}")
-                    with open(file_path, 'wb') as f:
-                        f.write(base64.b64decode(task_obj.output_file_content))
-                    # ret = finish_task(task_obj)
-                    ret = task_obj.finish()
-                else: # 没有输出文件
-                    logger.error(f"output_file_path or output_file_content not found in task")
-                    # ret = fail_task(task)
+        try:
+            # To consume latest messages and auto-commit offsets
+            consumer = KafkaConsumer(topic_name,
+                                    group_id=group_name,
+                                    bootstrap_servers=kafka_servers,
+                                    enable_auto_commit=True,
+                                    max_poll_records=1)
+            logger.info(f"Waiting for task update...")
+            for message in consumer:
+                # message value and key are raw bytes -- decode if necessary!
+                # e.g., for unicode: `message.value.decode('utf-8')`
+                # print("%s:%d:%d: key=%s" % (message.topic, message.partition, message.offset, message.key))
+                # logger.info("%s:%d:%d: key=%s" % (message.topic, message.partition, message.offset, message.key))
+                task = json.loads(message.value.decode('utf-8'))
+                logger.info(f"task update: id={task['id']}, status={task['status']}")
+                break
+            consumer.close()
+            
+            # update task status in database and file
+            ret = 1
+            # task_obj = Task(id=task['task_id'], status=task['status'], md5=task['md5'], source_language=task['source_language'], target_language=task['target_language'])
+            task_obj = Task.from_dict(task)
+            # if 'md5' in task and 'source_language' in task and 'target_language' in task:
+            if task_obj.md5 is not None and task_obj.source_language is not None and task_obj.target_language is not None:
+                # task_status = task['status']
+                if task_obj.status == 1:
+                    logger.info(f'task starts to be processing, id= {task_obj.id}')
+                    ret = task_obj.update()
+                elif task_obj.status == 2: # 成功
+                    # 写输出文件
+                    # if 'output_file_path' in task and 'output_file_content' in task: # 有输出文件
+                    if task_obj.output_file_path is not None and task_obj.output_file_content is not None:
+                        file_path = os.path.join(done_repo_dir, task_obj.output_file_path)
+                        logger.info(f"write output file to: {file_path}")
+                        with open(file_path, 'wb') as f:
+                            f.write(base64.b64decode(task_obj.output_file_content))
+                        # ret = finish_task(task_obj)
+                        ret = task_obj.finish()
+                    else: # 没有输出文件
+                        logger.error(f"output_file_path or output_file_content not found in task")
+                        # ret = fail_task(task)
+                        ret = task_obj.fail('output_file_path or output_file_content not found in task')
+                elif task_obj.status == 3: # 失败
+                    logger.error(f'task failed: status={task_obj.status}, error_msg={task_obj.error_msg}')
                     ret = task_obj.fail()
-            elif task_obj.status == 3: # 失败
-                # ret = fail_task(task)
-                ret = task_obj.fail()
-            else: # 未知状态
-                logger.error(f"unknown task status: {task_obj.status}")
-                ret = 1
-        if ret != 0:
-            logger.error(f"update task status failed")
-        else:
-            logger.info(f"update task status success")
-                
+                else: # 未知状态
+                    logger.error(f"unknown task status: {task_obj.status}")
+                    ret = 1
+            if ret != 0:
+                logger.error(f"update task status failed")
+            else:
+                logger.info(f"update task status success")
+        except NoBrokersAvailable as err:
+            sec = 5
+            logger.error(f"Unexpected {err}, retry in {sec} seconds")
+            time.sleep(sec)
+        except Exception as err:
+            logger.error(f"Unexpected {err}, {type(err)}")
+            logger.info(traceback.format_exc())
+    # end of while
 
-import threading
-if __name__ == "__main__":
-    logger.info(f"KAFKA_CONFIG: {KAFKA_CONFIG}")
+def check_mysql():
     conn = Task().get_connection()
     if conn is None:
         logger.error(f"Failed to connect to MySQL")
+        return False
     else:
         logger.info(f"Connected to MySQL")
+        return True
+    
+def check_kafka():
+    logger.info(f"KAFKA_CONFIG: {KAFKA_CONFIG}")
+    return True
+
+def init_check():
+    if not check_mysql():
+        exit(1)
+
+    if not check_kafka():
+        exit(2)
+
+import threading
+if __name__ == "__main__":
+    init_check()
     
     # 线程，订阅状态更新，也可以用多进程或独立进程
     t = threading.Thread(target=subscribe_status_update)

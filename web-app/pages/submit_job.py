@@ -135,6 +135,12 @@ def try_submit_task(force:bool = False):
                         'msg': f"正在翻译中，id={data['task_id']}",
                         'task_id': data['task_id']
                     }
+                elif data['status'] == 3:
+                    st.session_state['task'] = {
+                        'status': 3, 
+                        'msg': f"任务失败：id={data['task_id']}, ErrorMsg={data['message']}",
+                        'task_id': data['task_id']
+                    }
                 else:
                     logger.exception(f"unknown msg: {data}")
             else: # code != 0
@@ -162,7 +168,7 @@ def query_task(task_id):
         if data['code'] == 0:
             if data['status'] == 2:
                 st.session_state['task'] = {
-                    'status': 3,  # status 3跟2其实是一样数据库结果，但对应用户的操作不同
+                    'status': 21,  # status 21跟2其实是一样数据库结果，但对应用户的操作不同
                     'msg': "翻译已完成",
                     'task_id': data['task_id'],
                     'download_file_path': data['download_file_path'],
@@ -171,7 +177,7 @@ def query_task(task_id):
             elif data['status'] == 0:
                 st.session_state['task'] = {
                     'status': 0,
-                    'msg': f"翻译任务提交成功, 等待被翻译 id={data['task_id']}",
+                    'msg': f"翻译任务已提交，排队中，id={data['task_id']}",
                     'task_id': data['task_id']
                 }
             elif data['status'] == 1:
@@ -180,6 +186,12 @@ def query_task(task_id):
                     'msg': f"正在翻译中，id={data['task_id']}",
                     'task_id': data['task_id']
                 }
+            elif data['status'] == 3:
+                st.session_state['task'] = {
+                    'status': 3, 
+                    'msg': f"任务失败：id={data['task_id']}, ErrorMsg={data['message']}",
+                    'task_id': data['task_id']
+                } 
             else:
                 logger.exception(f"unknown msg: {data}")
         else: # code != 0
@@ -195,7 +207,7 @@ with task_form:
     left.selectbox('当前语言', ['中文', '英文'], key='source_lang')
     right.selectbox('目标语言', ['英文', '中文'], key='target_lang')
     txt = st.text_area(
-        "保留词/免翻译词输入，以换行作为分割符（可选）：",
+        "[可选]保留词/免翻译词输入，以换行作为分割符：",
         "CTG\nCDN\nECS\nCT",
         key='dont_translate_words'
     )
@@ -209,11 +221,11 @@ with resp_container:
             st.write(task['msg'])
         elif task['status'] == 0:
             left, right = st.columns([4, 2])
-            left.write(f"翻译任务已提交，等待翻译，id={task['task_id']}")
+            left.write(f"翻译任务已提交，排队中，id={task['task_id']}")
             right.button("状态刷新", use_container_width=True, on_click=query_task, args=[task['task_id']])
         elif task['status'] == 1:
             left, right = st.columns([4, 2])
-            left.write(f"翻译中，id={task['task_id']}")
+            left.write(f"正在翻译中，id={task['task_id']}")
             right.button("状态刷新", use_container_width=True, on_click=query_task, args=[task['task_id']])
         elif task['status'] == 2:
             left, middle, right = st.columns([4, 2, 2])
@@ -222,9 +234,12 @@ with resp_container:
                 middle.download_button(label='立即下载', data=f, mime='application/octet-stream', file_name=task['output_filename'])
             # middle.link_button("立即下载", task['download_file_path'], use_container_width=True)
             right.button("重新翻译", use_container_width=True, on_click=try_submit_task, kwargs={"force":True})
-        elif task['status'] == 3:
-            left, right = st.columns([4, 2])
+        elif task['status'] == 21:
+            left, right = st.columns([6, 2])
             left.write(f"翻译已完成， id={task['task_id']}")
             # right.link_button("立即下载", task['download_file_path'], use_container_width=True)
             with open(f"file_repo/done/{task['output_filename']}", "rb") as f:
                 right.download_button(label='立即下载', data=f, mime='application/octet-stream', file_name=task['output_filename'])
+        elif task['status'] == 3: #query，且结果是失败
+            st.write(task['msg'])
+        

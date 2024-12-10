@@ -57,7 +57,7 @@ if [[ 'Linux' == $os ]]; then
 fi
 # start docker compose  
 docker-compose up broker -d
-sleep 5
+# sleep 5
 # init kafka topic
 TOPIC=pptx-translate
 docker-compose exec --workdir /opt/kafka/bin/ -it broker \
