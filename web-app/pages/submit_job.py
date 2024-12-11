@@ -149,6 +149,7 @@ def try_submit_task(force:bool = False):
             st.warning(f"系统异常, status_code=${resp.status_code}")
 
 # curl -v http://localhost:8080/query?task_id=30
+# curl -v http://localhost:8080/query/30  Todo
 def query_task(task_id):
     logger.debug(f'query_task: {task_id}')
     # headers = {'Content-type': 'application/json'}

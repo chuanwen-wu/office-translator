@@ -27,10 +27,12 @@ services:
             - KAFKA_SERVERS=broker:9092
             - TZ=Asia/Shanghai
         container_name: "controller"
-        entrypoint: ["python", "httpd.py"]
-        # depends_on:
-        #   - mysql
-        #   - broker
+        # entrypoint: ["python", "httpd.py"]
+        #CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "80"]
+        entrypoint: ["uvicorn", "httpd:app", "--host", "0.0.0.0", "--port", "8080", '--reload']
+        depends_on:
+          - mysql
+          - broker
     worker:
         image: sebalaxi/office-translator
         container_name: "worker"

@@ -14,6 +14,12 @@ from kafka import KafkaProducer
 from kafka import KafkaConsumer
 from kafka.errors import KafkaError
 from kafka.errors import NoBrokersAvailable
+from typing import Union
+from fastapi import FastAPI
+from pydantic import BaseModel
+from contextlib import asynccontextmanager
+import threading
+
 # Set up logger
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
@@ -54,144 +60,144 @@ KAFKA_CONFIG = {
     'servers': os.getenv('KAFKA_SERVERS', 'localhost:9092').split(',')
 }
 
-class MyServer(SimpleHTTPRequestHandler):
-    def __init__(self, *args, **kwargs):
-        self.protocol_version = 'HTTP/1.0'
-        logger.info(f"self.directory: {done_repo_dir}")
-        super().__init__(*args, directory=done_repo_dir, **kwargs)
+# class MyServer(SimpleHTTPRequestHandler):
+#     def __init__(self, *args, **kwargs):
+#         self.protocol_version = 'HTTP/1.0'
+#         logger.info(f"self.directory: {done_repo_dir}")
+#         super().__init__(*args, directory=done_repo_dir, **kwargs)
 
-    def do_GET(self):
-        logger.info(f"do_GET: {self.command}, {self.path}, headers: \n{self.headers}")
-        parsed = urlparse(self.path)
-        p = self.path.split("?")[0]
-        p = p.split("/")
-        pp = p[1]
-        if pp == 'query':
-            query_params = parse_qs(parsed.query)
-            logger.info(query_params)
-            task_id = query_params.get('task_id', [''])[0]
-            md5 = query_params.get('md5', [''])[0]
-            source_language = query_params.get('source_language', [''])[0]
-            target_language = query_params.get('target_language', [''])[0]
-            if task_id or md5:
-                task_obj = Task(id=task_id, md5=md5, source_language=source_language, target_language=target_language)
-                logger.info(f"task_obj: {task_obj}")
-                ret = task_obj.query()
-                if ret is True:
-                    self.send_response(200)
-                    self.send_header("Content-type", "application/json")
-                    self.end_headers()
-                    download_file_path = ''
-                    if task_obj.status == 2:
-                        download_file_path = download_url_prefix + task_obj.output_file_path
-                        msg = 'finished'
-                    elif task_obj.status == 1:
-                        msg = 'processing'
-                    elif task_obj.status == 0:
-                        msg = 'pending'
-                    elif task_obj.status == 3:
-                        msg = task_obj.error_msg
-                    else:
-                        msg = 'unknown'
-                    response = json.dumps({
-                        'code': 0,
-                        'status': task_obj.status,
-                        'task_id': task_obj.id,
-                        'message': msg,
-                        'download_file_path': download_file_path
-                    })
-                    logger.info(f"response: {response}")
-                    self.wfile.write(response.encode())
-                else:
-                    self.send_error(404, "task not found")
-            else:
-                self.send_error(403, "request params error")
-        elif pp == 'download':
-            filename = p[-1]
-            logger.info(f"download file: {filename}")
-            self.path = filename
-            super().do_GET()
-        else:
-            self.send_response(404)
-            self.send_header("Content-type", "text/plain")
-            self.end_headers()
-            self.wfile.write(b'Not Found')
+#     def do_GET(self):
+#         logger.info(f"do_GET: {self.command}, {self.path}, headers: \n{self.headers}")
+#         parsed = urlparse(self.path)
+#         p = self.path.split("?")[0]
+#         p = p.split("/")
+#         pp = p[1]
+#         if pp == 'query':
+#             query_params = parse_qs(parsed.query)
+#             logger.info(query_params)
+#             task_id = query_params.get('task_id', [''])[0]
+#             md5 = query_params.get('md5', [''])[0]
+#             source_language = query_params.get('source_language', [''])[0]
+#             target_language = query_params.get('target_language', [''])[0]
+#             if task_id or md5:
+#                 task_obj = Task(id=task_id, md5=md5, source_language=source_language, target_language=target_language)
+#                 logger.info(f"task_obj: {task_obj}")
+#                 ret = task_obj.query()
+#                 if ret is True:
+#                     self.send_response(200)
+#                     self.send_header("Content-type", "application/json")
+#                     self.end_headers()
+#                     download_file_path = ''
+#                     if task_obj.status == 2:
+#                         download_file_path = download_url_prefix + task_obj.output_file_path
+#                         msg = 'finished'
+#                     elif task_obj.status == 1:
+#                         msg = 'processing'
+#                     elif task_obj.status == 0:
+#                         msg = 'pending'
+#                     elif task_obj.status == 3:
+#                         msg = task_obj.error_msg
+#                     else:
+#                         msg = 'unknown'
+#                     response = json.dumps({
+#                         'code': 0,
+#                         'status': task_obj.status,
+#                         'task_id': task_obj.id,
+#                         'message': msg,
+#                         'download_file_path': download_file_path
+#                     })
+#                     logger.info(f"response: {response}")
+#                     self.wfile.write(response.encode())
+#                 else:
+#                     self.send_error(404, "task not found")
+#             else:
+#                 self.send_error(403, "request params error")
+#         elif pp == 'download':
+#             filename = p[-1]
+#             logger.info(f"download file: {filename}")
+#             self.path = filename
+#             super().do_GET()
+#         else:
+#             self.send_response(404)
+#             self.send_header("Content-type", "text/plain")
+#             self.end_headers()
+#             self.wfile.write(b'Not Found')
 
-    def do_POST(self):
-        logger.info(f"do_POST: {self.command}, {self.path}, headers: \n{self.headers}")
-        parsed = urlparse(self.path)
-        # logger.info(f"parsed = {parsed}")
-        if parsed.path == '/ppt-translate':
-            # query_params = parse_qs(urlparse(self.path).query)
-            # data = query_params.get('data', [''])[0]
-            # source_lang
-            # target_lang
-            # dont_translate_word_list
-            # input_file
-            content_type, pdict = parse_header(self.headers.get('content-type'))
-            if content_type == 'multipart/form-data':
-                pdict['boundary'] = bytes(pdict['boundary'], "utf-8")
-                post_vars = parse_multipart(self.rfile, pdict)
-                # print(f"postvars: {post_vars}")
-                source_lang = post_vars['source_lang'][0]
-                target_lang = post_vars['target_lang'][0]
-                input_file_content = post_vars['file'][0]
-                input_filename = post_vars.get('filename', [''])[0]
-                force = post_vars['force'][0]
-                if not input_filename.endswith('.pptx'):
-                    logger.error(f"input_filename must end with .pptx")
-                    self.send_response(400)
-                    self.send_header("Content-type", "application/json")
-                    self.end_headers()
-                    response = json.dumps({'code': 400, 'message': 'input_filename must end with .pptx'})
-                    self.wfile.write(response.encode())
-                    return 0
-                dont_translate_word_list = post_vars['dont_translate_word_list'][0]
-                res = submit_translate_task(source_lang, target_lang, input_file_content, dont_translate_word_list, input_filename, force)
-                self.send_response(200)
-                self.send_header("Content-type", "application/json")
-                self.end_headers()
-                response = json.dumps(res)
-                self.wfile.write(response.encode())
-                return 0
-            elif content_type == 'application/json':
-                req_datas = self.rfile.read(int(self.headers['content-length'])) 
-                post_data = json.loads(req_datas.decode())
-                # 昂贵的操作
-                tmp = post_data.copy()
-                del tmp['input_file_content']
-                logger.info(f"post_data: {tmp}")
-                dont_translate_word_list = ''
-                input_filename = "default.pptx"
-                if 'source_lang' in post_data and 'target_lang' in post_data and 'input_file_content' in post_data:
-                    source_lang = post_data['source_lang']
-                    target_lang = post_data['target_lang']
-                    input_file_content = base64.b64decode(post_data['input_file_content']) 
-                    if 'dont_translate_words' in post_data:
-                        dont_translate_word_list = post_data['dont_translate_words']
-                    if 'input_filename' in post_data:
-                        input_filename = post_data['input_filename']
-                    if 'force' in post_data:
-                        force = post_data['force']
-                    else:
-                        force = False
-                    res = submit_translate_task(source_lang, target_lang, input_file_content, dont_translate_word_list, input_filename, force)
-                    self.send_response(200)
-                    self.send_header("Content-type", "application/json")
-                    self.end_headers()
-                    response = json.dumps(res)
-                    self.wfile.write(response.encode())
-                    return 0
-            self.send_response(504)  # todo 504 未测试
-            self.send_header('Content-type', 'text/plain')
-            self.end_headers()
-            self.wfile.write(b'Bad Request')
-            return 0
-        else:
-            self.send_response(404)
-            self.send_header('Content-type', 'text/plain')
-            self.end_headers()
-            self.wfile.write(b'Not Found')
+#     def do_POST(self):
+#         logger.info(f"do_POST: {self.command}, {self.path}, headers: \n{self.headers}")
+#         parsed = urlparse(self.path)
+#         # logger.info(f"parsed = {parsed}")
+#         if parsed.path == '/ppt-translate':
+#             # query_params = parse_qs(urlparse(self.path).query)
+#             # data = query_params.get('data', [''])[0]
+#             # source_lang
+#             # target_lang
+#             # dont_translate_word_list
+#             # input_file
+#             content_type, pdict = parse_header(self.headers.get('content-type'))
+#             if content_type == 'multipart/form-data':
+#                 pdict['boundary'] = bytes(pdict['boundary'], "utf-8")
+#                 post_vars = parse_multipart(self.rfile, pdict)
+#                 # print(f"postvars: {post_vars}")
+#                 source_lang = post_vars['source_lang'][0]
+#                 target_lang = post_vars['target_lang'][0]
+#                 input_file_content = post_vars['file'][0]
+#                 input_filename = post_vars.get('filename', [''])[0]
+#                 force = post_vars['force'][0]
+#                 if not input_filename.endswith('.pptx'):
+#                     logger.error(f"input_filename must end with .pptx")
+#                     self.send_response(400)
+#                     self.send_header("Content-type", "application/json")
+#                     self.end_headers()
+#                     response = json.dumps({'code': 400, 'message': 'input_filename must end with .pptx'})
+#                     self.wfile.write(response.encode())
+#                     return 0
+#                 dont_translate_word_list = post_vars['dont_translate_word_list'][0]
+#                 res = submit_translate_task(source_lang, target_lang, input_file_content, dont_translate_word_list, input_filename, force)
+#                 self.send_response(200)
+#                 self.send_header("Content-type", "application/json")
+#                 self.end_headers()
+#                 response = json.dumps(res)
+#                 self.wfile.write(response.encode())
+#                 return 0
+#             elif content_type == 'application/json':
+#                 req_datas = self.rfile.read(int(self.headers['content-length'])) 
+#                 post_data = json.loads(req_datas.decode())
+#                 # 昂贵的操作
+#                 tmp = post_data.copy()
+#                 del tmp['input_file_content']
+#                 logger.info(f"post_data: {tmp}")
+#                 dont_translate_word_list = ''
+#                 input_filename = "default.pptx"
+#                 if 'source_lang' in post_data and 'target_lang' in post_data and 'input_file_content' in post_data:
+#                     source_lang = post_data['source_lang']
+#                     target_lang = post_data['target_lang']
+#                     input_file_content = base64.b64decode(post_data['input_file_content']) 
+#                     if 'dont_translate_words' in post_data:
+#                         dont_translate_word_list = post_data['dont_translate_words']
+#                     if 'input_filename' in post_data:
+#                         input_filename = post_data['input_filename']
+#                     if 'force' in post_data:
+#                         force = post_data['force']
+#                     else:
+#                         force = False
+#                     res = submit_translate_task(source_lang, target_lang, input_file_content, dont_translate_word_list, input_filename, force)
+#                     self.send_response(200)
+#                     self.send_header("Content-type", "application/json")
+#                     self.end_headers()
+#                     response = json.dumps(res)
+#                     self.wfile.write(response.encode())
+#                     return 0
+#             self.send_response(504)  # todo 504 未测试
+#             self.send_header('Content-type', 'text/plain')
+#             self.end_headers()
+#             self.wfile.write(b'Bad Request')
+#             return 0
+#         else:
+#             self.send_response(404)
+#             self.send_header('Content-type', 'text/plain')
+#             self.end_headers()
+#             self.wfile.write(b'Not Found')
     
 def submit_translate_task(source_lang, target_lang, input_file_content, dont_translate_word_list, input_filename, force=False):
     '''
@@ -381,23 +387,108 @@ def init_check():
     if not check_kafka():
         exit(2)
 
-import threading
-if __name__ == "__main__":
-    init_check()
+# if __name__ == "__main__":
+#     init_check()
     
+#     # 线程，订阅状态更新，也可以用多进程或独立进程
+#     t = threading.Thread(target=subscribe_status_update)
+#     t.start()
+#     # ThreadingHTTPServer
+#     webServer = HTTPServer((hostName, serverPort), MyServer)
+#     logger.info("Server started http://%s:%s" % (hostName, serverPort))
+
+#     try:
+#         webServer.serve_forever()
+#     except KeyboardInterrupt:
+#         pass
+
+#     webServer.server_close()
+#     logger.info("Server stopped.")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    logger.info("starting...")
+    init_check()
     # 线程，订阅状态更新，也可以用多进程或独立进程
     t = threading.Thread(target=subscribe_status_update)
     t.start()
-    # ThreadingHTTPServer
-    webServer = HTTPServer((hostName, serverPort), MyServer)
-    logger.info("Server started http://%s:%s" % (hostName, serverPort))
+    yield
+    logger.info("stopping...")
 
-    try:
-        webServer.serve_forever()
-    except KeyboardInterrupt:
-        pass
+app = FastAPI(lifespan=lifespan)
 
-    webServer.server_close()
-    # get_connection().close()
-    # t.join()
-    logger.info("Server stopped.")
+class TaskForm(BaseModel):
+    source_lang: str
+    target_lang: str
+    input_file_content: str
+    input_filename: str
+    dont_translate_words: str
+
+
+@app.get("/")
+def read_root():
+    return {"Hello": "World"}
+
+
+# @app.get("/query/{task_id}")
+@app.get("/query")
+def query_task(task_id: int):
+    task_obj = Task(id=task_id)
+    logger.info(f"task_obj: {task_obj}")
+    ret = task_obj.query()
+    if ret is True:
+        download_file_path = ''
+        if task_obj.status == 2:
+            download_file_path = download_url_prefix + task_obj.output_file_path
+            msg = 'finished'
+        elif task_obj.status == 1:
+            msg = 'processing'
+        elif task_obj.status == 0:
+            msg = 'pending'
+        elif task_obj.status == 3:
+            msg = task_obj.error_msg
+        else:
+            msg = 'unknown'
+        response = {
+            'code': 0,
+            'status': task_obj.status,
+            'task_id': task_obj.id,
+            'message': msg,
+            'download_file_path': download_file_path
+        }
+        logger.info(f"response: {response}") 
+    else:
+        response = {
+            'code': 404,
+            'msg': 'task not found'
+        }
+
+    return response
+
+class TaskData(BaseModel):
+    source_lang: str
+    target_lang: str
+    input_file_content: str
+    input_filename: str
+    dont_translate_words: Union[str, None] = None
+    force: Union[bool, None] = None
+
+
+@app.post("/ppt-translate")
+def ppt_translate(task: TaskData):
+    logger.info(f"new task: {task.input_filename}, {task.source_lang}, {task.target_lang}, {task.dont_translate_words}, {task.force}")
+    source_lang = task.source_lang
+    target_lang = task.target_lang
+    input_file_content = base64.b64decode(task.input_file_content)
+    input_filename = task.input_filename
+    if not task.dont_translate_words:
+        dont_translate_words = ''
+    else:
+        dont_translate_words = task.dont_translate_words
+    if not task.force:
+        force = False
+    else:
+        force = task.force
+    res = submit_translate_task(source_lang, target_lang, input_file_content, dont_translate_words, input_filename, force)
+    return res
