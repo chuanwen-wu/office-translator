@@ -73,10 +73,10 @@ def submit_task(filename, file_content, source_name, target_name, dont_translate
     }
     logger.debug(f"request: {filename} from {source_name} to {target_name}, dont_translate_words={data['dont_translate_words']}, force={force} ")
     headers = {'Content-type': 'application/json'}
-    resp = requests.post(f"{CONTROLLER_ENDPOINT}/ppt-translate", json = data, headers=headers)
+    resp = requests.post(f"{CONTROLLER_ENDPOINT}/api/ppt-translate", json = data, headers=headers)
     return resp
 
-# http://localhost:8080/download/input-zh-20241206194605.pptx  ---> input-zh-20241206194605.pptx
+# http://localhost:8080/download/input-zh-20241206194605.pptx -> input-zh-20241206194605.pptx
 def get_output_filename(download_file_path):
     return download_file_path.split('/')[-1]
 
@@ -148,12 +148,10 @@ def try_submit_task(force:bool = False):
         else: # http code != 200
             st.warning(f"系统异常, status_code=${resp.status_code}")
 
-# curl -v http://localhost:8080/query?task_id=30
-# curl -v http://localhost:8080/query/30  Todo
+# curl -v http://localhost:8080/query/30
 def query_task(task_id):
     logger.debug(f'query_task: {task_id}')
-    # headers = {'Content-type': 'application/json'}
-    resp = requests.get(f"{CONTROLLER_ENDPOINT}/query", params={'task_id': task_id})
+    resp = requests.get(f"{CONTROLLER_ENDPOINT}/api/query/{task_id}", params={'task_id': task_id})
     logger.debug(f"status_code: {resp.status_code}")
     logger.debug(f"text: {resp.text}")
     logger.debug(f"content: {resp.content}")

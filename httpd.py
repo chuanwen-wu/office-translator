@@ -37,7 +37,8 @@ logger.addHandler(handler)
 
 file_repo_dir = './file_repo'
 done_repo_dir = os.path.join(file_repo_dir, 'done')
-download_url_prefix = 'http://localhost:8080/download/'   # todo host
+download_url_prefix = ''
+# download_url_prefix = 'http://localhost:8080/download/' 
 task = {
     'md5': '',
     'status': 0,
@@ -188,7 +189,7 @@ KAFKA_CONFIG = {
 #                     response = json.dumps(res)
 #                     self.wfile.write(response.encode())
 #                     return 0
-#             self.send_response(504)  # todo 504 未测试
+#             self.send_response(504)  # 504
 #             self.send_header('Content-type', 'text/plain')
 #             self.end_headers()
 #             self.wfile.write(b'Bad Request')
@@ -425,14 +426,7 @@ class TaskForm(BaseModel):
     input_filename: str
     dont_translate_words: str
 
-
-@app.get("/")
-def read_root():
-    return {"Hello": "World"}
-
-
-# @app.get("/query/{task_id}")
-@app.get("/query")
+@app.get("/api/query/{task_id}")
 def query_task(task_id: int):
     task_obj = Task(id=task_id)
     logger.info(f"task_obj: {task_obj}")
@@ -474,8 +468,7 @@ class TaskData(BaseModel):
     dont_translate_words: Union[str, None] = None
     force: Union[bool, None] = None
 
-
-@app.post("/ppt-translate")
+@app.post("/api/ppt-translate")
 def ppt_translate(task: TaskData):
     logger.info(f"new task: {task.input_filename}, {task.source_lang}, {task.target_lang}, {task.dont_translate_words}, {task.force}")
     source_lang = task.source_lang

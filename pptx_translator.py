@@ -302,7 +302,7 @@ def subscribe_translate_task():
             # print("%s:%d:%d: key=%s value=%s" % (message.topic, message.partition,
             #                                   message.offset, message.key,
             #                                   message.value))
-            #logger.info("%s:%d:%d: key=%s" % (message.topic, message.partition, message.offset, message.key)) #todo
+            #logger.info("%s:%d:%d: key=%s" % (message.topic, message.partition, message.offset, message.key))
             task = json.loads(message.value.decode('utf-8'))
             task['input_file_content'] = base64.b64decode(task['input_file_content'])
             logger.info(f"Receive task: id={task['id']}, md5={task['md5']}, source_language={task['source_language']}, target_language={task['target_language']}")
