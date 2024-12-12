@@ -7,10 +7,15 @@ if [[ $1 == 'all' ]]; then
         version=$2
     fi
     echo "build mac and linux release of verion ${version}" 
-    docker build --platform linux/amd64,linux/arm64 -t sebalaxi/office-translator:latest -f Dockerfile-controller ../../ --push
+    docker build --platform linux/amd64,linux/arm64 -t sebalaxi/office-translator:latest -f Dockerfile-controller ../../
+    docker push sebalaxi/office-translator:latest
     docker tag sebalaxi/office-translator:latest sebalaxi/office-translator:${version}
+    docker push sebalaxi/office-translator:${version}
+
     docker build --platform linux/amd64,linux/arm64 -t sebalaxi/office-translator-web-app:latest -f Dockerfile-web-app ../../web-app/ --push
+    docker push sebalaxi/office-translator-web-app:latest
     docker tag sebalaxi/office-translator-web-app:latest sebalaxi/office-translator-web-app:${version}
+    docker push sebalaxi/office-translator-web-app:${version}
 else
     echo "build only mac release" 
     docker build -t sebalaxi/office-translator:latest -f Dockerfile-controller ../../

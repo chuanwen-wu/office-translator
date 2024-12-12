@@ -193,6 +193,12 @@ def query_task(task_id):
                 } 
             else:
                 logger.exception(f"unknown msg: {data}")
+        elif data['code'] == 404:
+            st.session_state['task'] = {
+                'status': 4, 
+                'msg': f"任务不存在：id={data['task_id']}, ErrorMsg={data['message']}",
+                'task_id': data['task_id']
+            } 
         else: # code != 0
             st.warning(f"系统异常, code=${data['code']}")
     else: # http code != 200
@@ -229,9 +235,12 @@ with resp_container:
         elif task['status'] == 2:
             left, middle, right = st.columns([4, 2, 2])
             left.write(f"该PPT已被翻译过， id={task['task_id']}")
-            with open(f"file_repo/done/{task['output_filename']}", "rb") as f:
-                middle.download_button(label='立即下载', data=f, mime='application/octet-stream', file_name=task['output_filename'])
-            # middle.link_button("立即下载", task['download_file_path'], use_container_width=True)
+            try:
+                with open(f"file_repo/done/{task['output_filename']}", "rb") as f:
+                    middle.download_button(label='立即下载', data=f, mime='application/octet-stream', file_name=task['output_filename'])
+                    # middle.link_button("立即下载", task['download_file_path'], use_container_width=True)
+            except Exception as err:
+                middle.write(f"但文件打开出错。")
             right.button("重新翻译", use_container_width=True, on_click=try_submit_task, kwargs={"force":True})
         elif task['status'] == 21:
             left, right = st.columns([6, 2])

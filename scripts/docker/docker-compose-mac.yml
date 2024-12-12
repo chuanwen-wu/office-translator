@@ -9,7 +9,7 @@ services:
         environment:
             - CONTROLLER_ENDPOINT=http://controller
             - TZ=Asia/Shanghai
-        entrypoint: ["python", "-m", "streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+        entrypoint: ["python", "-m", "streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.maxUploadSize", "500"]
     controller:
         image: sebalaxi/office-translator:latest
         ports:
@@ -37,6 +37,8 @@ services:
         image: sebalaxi/office-translator:latest
         entrypoint: ["python", "pptx_translator.py"]
         restart: unless-stopped
+        volumes:
+            - "${PWD}/data/file_repo:/app/file_repo"
         depends_on:
           - broker
         environment:

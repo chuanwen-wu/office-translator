@@ -47,6 +47,7 @@ else
 fi
 
 mkdir -p data/file_repo/done
+mkdir -p data/file_repo/input
 mkdir -p data/mysql
 mkdir -p data/ollama
 
@@ -59,18 +60,18 @@ fi
 docker-compose up broker -d
 # sleep 5
 # init kafka topic
-TOPIC=pptx-translate
-docker-compose exec --workdir /opt/kafka/bin/ -it broker \
-    ./kafka-configs.sh --bootstrap-server localhost:9092 \
-                --alter --entity-type topics \
-                --entity-name $TOPIC \
-                --add-config max.message.bytes=1048588000
-TOPIC2=status-update
-docker-compose exec --workdir /opt/kafka/bin/ -it broker \
-    ./kafka-configs.sh --bootstrap-server localhost:9092 \
-                --alter --entity-type topics \
-                --entity-name $TOPIC2 \
-                --add-config max.message.bytes=1048588000
+# TOPIC=pptx-translate
+# docker-compose exec --workdir /opt/kafka/bin/ -it broker \
+#     ./kafka-configs.sh --bootstrap-server localhost:9092 \
+#                 --alter --entity-type topics \
+#                 --entity-name $TOPIC \
+#                 --add-config max.message.bytes=1048588000
+# TOPIC2=status-update
+# docker-compose exec --workdir /opt/kafka/bin/ -it broker \
+#     ./kafka-configs.sh --bootstrap-server localhost:9092 \
+#                 --alter --entity-type topics \
+#                 --entity-name $TOPIC2 \
+#                 --add-config max.message.bytes=1048588000
 
 docker-compose up mysql -d
 # init db

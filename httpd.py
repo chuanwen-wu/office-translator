@@ -37,6 +37,7 @@ logger.addHandler(handler)
 
 file_repo_dir = './file_repo'
 done_repo_dir = os.path.join(file_repo_dir, 'done')
+input_repo_dir = os.path.join(file_repo_dir, 'input')
 download_url_prefix = ''
 # download_url_prefix = 'http://localhost:8080/download/' 
 task = {
@@ -256,8 +257,8 @@ def submit_translate_task(source_lang, target_lang, input_file_content, dont_tra
         
         return res['code'], res
 
-def insert_update_task(task_obj):
-    input_file_path = os.path.join(file_repo_dir, task_obj.md5 + '-' + task_obj.file_name)
+def insert_update_task(task_obj:Task):
+    input_file_path = os.path.join(input_repo_dir, task_obj.md5 + '-' + task_obj.file_name)
     print(f"input_file_path: {input_file_path}")
     # 写入完整的文件内容
     with open(input_file_path, 'wb') as f:    
@@ -270,36 +271,39 @@ def insert_update_task(task_obj):
         '.pptx', 
         "-{target_lang}-{timestr}.pptx".
         format(target_lang=task_obj.target_language, timestr=time.strftime('%Y%m%d%H%M%S',time.localtime(time.time()))))
+    task_obj.output_file_path = os.path.join(done_repo_dir, task_obj.output_file_path)
     ret, task_id, msg = task_obj.insert_update()
     if ret == 0:
-        # task_obj.input_file_content = input_file_content
-        publish_translate_task(task_obj)
-    res = {
+        r, m = publish_translate_task(task_obj)
+        if not r:
+            ret = 3
+            msg = m
+
+    return {
         'code': ret,
         'status': task_obj.status,
         'message': msg,
         'task_id': task_id,
     }
-    return res
 
 def publish_translate_task(task: Task):
     logger.info(f"[publish_translate_task] id={task.id}, file_name={task.file_name}, source_language={task.source_language}, target_language={task.target_language} ")
     topic_name = KAFKA_CONFIG['topic_pptx']
     kafka_servers = KAFKA_CONFIG['servers']
-    producer = KafkaProducer(bootstrap_servers=kafka_servers,
-                             max_request_size=1024*1024*1024)
+    producer = KafkaProducer(bootstrap_servers=kafka_servers)
+                            #  max_request_size=1024*1024*1024,
+                            #  buffer_memory = 1024*1024*1024)
     # Asynchronous by default
     # task.input_file_content = base64.b64encode(task.input_file_content).decode('utf-8')
-    # future = producer.send(topic_name, key=b'foo', value=json.dumps(task).encode('utf-8'))
     future = producer.send(topic_name, key=bytes(str(task.id), encoding='ascii'), value=task.to_json().encode('utf-8'))
     try:
         record_metadata = future.get(timeout=30)
         # Successful result returns assigned partition and offset
         logger.info(f"record_metadata.topic: {record_metadata.topic}, partition: {record_metadata.partition}, offset: {record_metadata.offset}")
-        return True
+        return True, ''
     except KafkaError as err:
         logger.info(f'KafkaError: {err}')
-        pass
+        return False, str(err)
 
 def subscribe_status_update():
     logger.info(f"[subscribe_status_update] start...")
@@ -337,18 +341,17 @@ def subscribe_status_update():
                     ret = task_obj.update()
                 elif task_obj.status == 2: # 成功
                     # 写输出文件
-                    # if 'output_file_path' in task and 'output_file_content' in task: # 有输出文件
-                    if task_obj.output_file_path is not None and task_obj.output_file_content is not None:
-                        file_path = os.path.join(done_repo_dir, task_obj.output_file_path)
-                        logger.info(f"write output file to: {file_path}")
-                        with open(file_path, 'wb') as f:
-                            f.write(base64.b64decode(task_obj.output_file_content))
-                        # ret = finish_task(task_obj)
-                        ret = task_obj.finish()
-                    else: # 没有输出文件
-                        logger.error(f"output_file_path or output_file_content not found in task")
-                        # ret = fail_task(task)
-                        ret = task_obj.fail('output_file_path or output_file_content not found in task')
+                    # if task_obj.output_file_path is not None and task_obj.output_file_content is not None:
+                    #     file_path = os.path.join(done_repo_dir, task_obj.output_file_path)
+                    #     logger.info(f"write output file to: {file_path}")
+                    #     with open(file_path, 'wb') as f:
+                    #         f.write(base64.b64decode(task_obj.output_file_content))
+                    #     ret = task_obj.finish()
+                    # else: # 没有输出文件
+                    #     logger.error(f"output_file_path or output_file_content not found in task")
+                    #     # ret = fail_task(task)
+                    #     ret = task_obj.fail('output_file_path or output_file_content not found in task')
+                    ret = task_obj.finish()
                 elif task_obj.status == 3: # 失败
                     logger.error(f'task failed: status={task_obj.status}, error_msg={task_obj.error_msg}')
                     ret = task_obj.fail()
@@ -452,6 +455,7 @@ def query_task(task_id: int):
     else:
         response = {
             'code': 404,
+            'task_id': task_obj.id,
             'msg': 'task not found'
         }
 

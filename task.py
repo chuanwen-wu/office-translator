@@ -195,7 +195,7 @@ class Task:
             'output_file_path': self.output_file_path,
             'callback_url': self.callback_url,
             'user_id': self.user_id,
-            'input_file_content': None if self.input_file_content is None else base64.b64encode(self.input_file_content).decode('utf-8'),
+            # 'input_file_content': None if self.input_file_content is None else base64.b64encode(self.input_file_content).decode('utf-8'),
             # 'created_at': self.created_at,
             # 'updated_at': self.updated_at
         })

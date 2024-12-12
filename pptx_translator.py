@@ -303,8 +303,8 @@ def subscribe_translate_task():
             #                                   message.value))
             #logger.info("%s:%d:%d: key=%s" % (message.topic, message.partition, message.offset, message.key))
             task = json.loads(message.value.decode('utf-8'))
-            task['input_file_content'] = base64.b64decode(task['input_file_content'])
-            logger.info(f"Receive task: id={task['id']}, md5={task['md5']}, source_language={task['source_language']}, target_language={task['target_language']}")
+            # task['input_file_content'] = base64.b64decode(task['input_file_content'])
+            logger.info(f"Receive task: id={task['id']}, md5={task['md5']}, source_language={task['source_language']}, target_language={task['target_language']}, input_file_path={task['input_file_path']}, output_file_path={task['output_file_path']}")
             break
         consumer.close()
         # task['status'] = 1 #processing
@@ -320,18 +320,26 @@ def subscribe_translate_task():
             parse_dont_translate_words(task['dont_translate_list'])
         else:
             get_dont_translate_words(DONT_TRANSLATE_WORDS_FILE)
-        ret, output_file_content = translate_pptx_file(task['input_file_content'], task['source_language'], task['target_language'])
-        if ret == 0:
-            task['status'] = 2  #finished
-            task['output_file_content'] = output_file_content
-        else: #error
-            err = output_file_content
-            logger.error(f"translate_pptx_file failed: ret={ret}, err={err}")
+
+        try: 
+            with open(task['input_file_path'], 'rb') as f:
+                input_file_content = f.read()
+            ret, output_file_content = translate_pptx_file(input_file_content, task['source_language'], task['target_language'])
+            if ret == 0:
+                logger.info(f"write translated file to {task['output_file_path']}")
+                with open(task['output_file_path'], 'wb') as f:
+                    f.write(output_file_content)
+                task['status'] = 2  #finished                
+            else: #error
+                err = output_file_content
+                logger.error(f"translate_pptx_file failed: ret={ret}, err={err}")
+                task['status'] = 3
+                task['error_msg'] = err
+        except Exception as err2:
+            logger.error(err2)
             task['status'] = 3
-            task['error_msg'] = err
-
-        del task['input_file_content']
-
+            task['error_msg'] = str(err2)
+        # del task['input_file_content']
         publish_status_update(task)
 
 from kafka import KafkaProducer
@@ -342,8 +350,8 @@ def publish_status_update(task):
     topic_name = KAFKA_CONFIG['topic_status'] #'status-update'
     kafka_servers = KAFKA_CONFIG['servers'] #['localhost:9092']
     producer = KafkaProducer(bootstrap_servers=kafka_servers, max_request_size=1024*1024*1024)
-    if task['status'] == 2:
-        task['output_file_content'] = base64.b64encode(task['output_file_content']).decode('utf-8')
+    # if task['status'] == 2:
+    #     task['output_file_content'] = base64.b64encode(task['output_file_content']).decode('utf-8')
     # Asynchronous by default
     future = producer.send(topic_name, key=bytes(str(task['id']), encoding='ascii'), value=json.dumps(task).encode('utf-8'))
     # Block for 'synchronous' sends
@@ -386,10 +394,33 @@ def init_check():
     if not check_kafka():
         exit(2)
 
+def test():
+    try:
+        with open("scripts/docker/data/file_repo/71d6ede295b2d7f0ec3c3f9df7d16a27-input.pptx", 'rb') as f:
+            input_file_content = f.read()
+    except Exception as err:
+        logger.error(err)
+        return 1
+
+    ret, output_file_content = translate_pptx_file(input_file_content, 'en', 'zh')
+    logger.info(f"ret={ret}")
+
+    try:
+        with open("scripts/docker/data/file_repo2/output.pptx", 'wb') as f:
+            f.write(output_file_content)
+    except Exception as err:
+        logger.error(err)
+        return 2
+
+    logger.info(f"done")
+
+    
 if __name__== '__main__':
     logger.info(f"OLLAMA_CONFIG: {OLLAMA_CONFIG}")
     init_check()
-    # run_as_local()
     subscribe_translate_task()
+    # for local run
+    # run_as_local()
     # for testing below:
+    # test()
     # print(get_dont_translate_words(DONT_TRANSLATE_WORDS_FILE))
