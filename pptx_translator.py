@@ -95,7 +95,7 @@ def parse_dont_translate_words(text: str):
     DONT_TRANSLATE_WORDS = ", ".join(arr)
     return DONT_TRANSLATE_WORDS
 
-def translate_from_ollama(src, source_language_code, target_language_code):
+def translate_from_ollama(src, source_language_code, target_language_code, model:str="qwen2.5", temperature:int=0):
     source_language = ""
     target_language = ""
     if source_language_code.lower() == 'en':
@@ -110,10 +110,10 @@ def translate_from_ollama(src, source_language_code, target_language_code):
 
     temp = {
         # "model": "llama3.2",
-        "model": "qwen2.5",
+        "model": model,
         "stream": False,
         "options": {
-            'temperature': 0
+            'temperature': temperature
         },
         "messages": [
             {
@@ -137,7 +137,6 @@ Please keeping these phrases unchanged: {DONT_TRANSLATE_WORDS}."
     url = f"{OLLAMA_CONFIG['url']}/api/chat"
     resp = requests.post(url, data=data)
     if resp.status_code == 200:
-    # logger.info(resp.text)
         body = json.loads(resp.text)
         logger.info(f"{src} --> {body['message']['content']}")
         return body['message']['content']

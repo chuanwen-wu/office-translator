@@ -11,6 +11,7 @@
 # COPY .streamlit /app/.streamlit
 # ENTRYPOINT ["streamlit run app.py", "-b"]
 FROM alpine:3.19.1
+# FROM python:3.11-slim
 LABEL maintainer="Kennethwu"
 
 RUN apk update && apk add --no-cache \
@@ -19,10 +20,12 @@ RUN apk update && apk add --no-cache \
 
 WORKDIR /app
 COPY requirements.txt /app/requirements.txt
-RUN pip3 install --break-system-packages -r requirements.txt
+RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
+# RUN pip3 install --no-cache-dir -r requirements.txt
 COPY app.py /app/app.py
 COPY pages /app/pages
 COPY images /app/images
 COPY .streamlit /app/.streamlit
-# ENTRYPOINT ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
-ENTRYPOINT ["streamlit", "run", "app.py"]
+HEALTHCHECK CMD curl --fail http://localhost:8501/_stcore/health
+ENTRYPOINT ["streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
+# ENTRYPOINT ["streamlit", "run", "app.py"]

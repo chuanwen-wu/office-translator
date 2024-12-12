@@ -419,12 +419,9 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(lifespan=lifespan)
 
-class TaskForm(BaseModel):
-    source_lang: str
-    target_lang: str
-    input_file_content: str
-    input_filename: str
-    dont_translate_words: str
+@app.get("/health")
+def health():
+    return {'code': 0}
 
 @app.get("/api/query/{task_id}")
 def query_task(task_id: int):

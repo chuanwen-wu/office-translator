@@ -150,13 +150,13 @@ def try_submit_task(force:bool = False):
 
 # curl -v http://localhost:8080/query/30
 def query_task(task_id):
-    logger.debug(f'query_task: {task_id}')
-    resp = requests.get(f"{CONTROLLER_ENDPOINT}/api/query/{task_id}", params={'task_id': task_id})
-    logger.debug(f"status_code: {resp.status_code}")
-    logger.debug(f"text: {resp.text}")
-    logger.debug(f"content: {resp.content}")
-    logger.debug(f"json: {resp.json()}")
-    logger.debug(f"header: {resp.headers}")
+    logger.debug(f'[query_task]: {task_id}')
+    resp = requests.get(f"{CONTROLLER_ENDPOINT}/api/query/{task_id}", params={})
+    logger.debug(f"status_code: {resp.status_code}, text: {resp.text}")
+    # logger.debug(f"text: {resp.text}")
+    # logger.debug(f"content: {resp.content}")
+    # logger.debug(f"json: {resp.json()}")
+    # logger.debug(f"header: {resp.headers}")
     if resp.status_code == 200:
         #     'code': 0, 
         #     'status': 2, 

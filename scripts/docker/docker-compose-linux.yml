@@ -7,14 +7,17 @@ services:
         volumes:
             - "${PWD}/data/file_repo:/app/file_repo"
         environment:
-            - CONTROLLER_ENDPOINT=http://controller:8080
-        entrypoint: ["python", "-m", "streamlit", "run", "app.py"]
+            - CONTROLLER_ENDPOINT=http://controller
+            - TZ=Asia/Shanghai
+        entrypoint: ["python", "-m", "streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0"]
     controller:
         image: sebalaxi/office-translator:latest
         ports:
-            - "8081:8080"
+            # - "8081:80"
+            - "80"
         volumes:
             - "${PWD}/data/file_repo:/app/file_repo"
+        restart: unless-stopped
         environment:
             - DB_HOST=mysql
             - DB_USER=${DB_USER}
@@ -24,14 +27,14 @@ services:
             - KAFKA_TOPIC_STATUS_UPDATE=status-update
             - KAFKA_SERVERS=broker:9092
             - TZ=Asia/Shanghai
-        container_name: "controller"
-        entrypoint: ["python", "httpd.py"]
+        # container_name: "controller"
+        scale: 1
+        entrypoint: ["uvicorn", "httpd:app", "--host", "0.0.0.0", "--port", "80"]
         depends_on:
           - mysql
           - broker
     worker:
         image: sebalaxi/office-translator:latest
-        container_name: "worker"
         entrypoint: ["python", "pptx_translator.py"]
         restart: unless-stopped
         depends_on:
@@ -44,8 +47,8 @@ services:
             - TZ=Asia/Shanghai
     mysql:
         image: mysql:9.1.0
-        expose:
-            - 3306
+        ports:
+            - "3306:3306"
             # - 33060
         volumes:
             - "${PWD}/data/mysql:/var/lib/mysql"
@@ -53,8 +56,7 @@ services:
         environment:
             - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
             - MYSQL_DATABASE=office_translator
-        container_name: "mysql"
-
+            - TZ=Asia/Shanghai
     broker:
         image: apache/kafka:3.8.1
         container_name: broker
@@ -74,6 +76,7 @@ services:
             - KAFKA_TRANSACTION_STATE_LOG_MIN_ISR=1
             - KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS=0
             - KAFKA_NUM_PARTITIONS=1
+            - TZ=Asia/Shanghai
     ollama:
         image: ollama/ollama:0.5.0
         container_name: ollama
