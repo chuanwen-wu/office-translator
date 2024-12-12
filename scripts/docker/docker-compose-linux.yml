@@ -37,6 +37,8 @@ services:
         image: sebalaxi/office-translator:latest
         entrypoint: ["python", "pptx_translator.py"]
         restart: unless-stopped
+        volumes:
+            - "${PWD}/data/file_repo:/app/file_repo"
         depends_on:
           - broker
         environment:
