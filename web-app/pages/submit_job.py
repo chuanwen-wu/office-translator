@@ -236,9 +236,11 @@ with resp_container:
             left, middle, right = st.columns([4, 2, 2])
             left.write(f"该PPT已被翻译过， id={task['task_id']}")
             try:
+                # url = f"app/static/file_repo/done/{task['output_filename']}"
+                # middle.link_button("立即下载", url, use_container_width=True)
                 with open(f"file_repo/done/{task['output_filename']}", "rb") as f:
                     middle.download_button(label='立即下载', data=f, mime='application/octet-stream', file_name=task['output_filename'])
-                    # middle.link_button("立即下载", task['download_file_path'], use_container_width=True)
+                # middle.link_button("立即下载", task['download_file_path'], use_container_width=True)
             except Exception as err:
                 middle.write(f"但文件打开出错。")
             right.button("重新翻译", use_container_width=True, on_click=try_submit_task, kwargs={"force":True})
@@ -246,8 +248,11 @@ with resp_container:
             left, right = st.columns([6, 2])
             left.write(f"翻译已完成， id={task['task_id']}")
             # right.link_button("立即下载", task['download_file_path'], use_container_width=True)
-            with open(f"file_repo/done/{task['output_filename']}", "rb") as f:
-                right.download_button(label='立即下载', data=f, mime='application/octet-stream', file_name=task['output_filename'])
+            try:
+                with open(f"file_repo/done/{task['output_filename']}", "rb") as f:
+                    right.download_button(label='立即下载', data=f, mime='application/octet-stream', file_name=task['output_filename'])
+            except Exception as err:
+                right.write(f"但文件打开异常")    
         elif task['status'] == 3: #query，且结果是失败
             st.write(task['msg'])
         
