@@ -13,31 +13,21 @@
 - 不支持文本框大小自动调整：大多数情况下，中文翻译成英文后，文本长度会变长，反之则会变短，翻译后会保留字体及大小，需要再手动调整字体大小，以适配PPT的布局；
 
 ## 安装
-这里介绍如何本地单机命令行运行，但同时也提供了WEB界面并扩展到集群服务，请跳到docker services
+这里介绍如何本地单机命令行运行，但同时也提供了WEB界面并扩展到集群服务，请跳到docker services.
 ```
 $ python3 -m venv venv
 $ source venv/bin/activate
 $ pip install -r requirements.txt
 ```
 
-## 用法
+## 启动命令行翻译本地pptx文件
 ```
-$ python pptx-translator.py --help
-usage: Translates pptx files from source language to target language using Amazon Translate service
-       [-h] 
-       source_language_code target_language_code input_file_path
-
-positional arguments:
-  source_language_code  The language code for the language of the source text.
-                        Example: en
-  target_language_code  The language code requested for the language of the
-                        target text. Example: zh
-  input_file_path       The path of the pptx file that should be translated
-
-optional arguments:
-  -h, --help            show this help message and exit
+$ python pptx_translator.py -s --source_language_code=zh --target_language_code=en --input_file_path=./input.pptx
 ```
-
+更详细用法请参考：
+```
+$ python pptx_translator.py -h
+```
 
 ## docker services
 本项目同时提供了WEB界面，以及构建了一套微服务架构：

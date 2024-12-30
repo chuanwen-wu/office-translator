@@ -43,7 +43,6 @@ def check_ollama():
         logger.error(f"connect ollama endpoint failed: {OLLAMA_CONFIG['url']}")
         return False
 
-# TERMINOLOGY_NAME = 'pptx-translator-terminology'
 DONT_TRANSLATE_WORDS_FILE = f"./dont-translate-word.txt"
 DONT_TRANSLATE_WORDS = f""
 
@@ -242,20 +241,25 @@ def translate_presentation(presentation, source_language_code, target_language_c
             raise err
     
 def run_as_local():
+    logger.info("Run in standalone mode")
     argument_parser = argparse.ArgumentParser(
-            'Translates pptx files from source language to target language using LLM')
+        'Translates pptx files using LLM in local mode')
     argument_parser.add_argument(
-            'source_language_code', type=str,
-            help='The language code for the language of the source text. Example: en')
+        '-s', '--standalone',
+        action="store_true",
+        help='Run as local script')
     argument_parser.add_argument(
-            'target_language_code', type=str,
-            help='The language code requested for the language of the target text. Example: pt')
+        '--source_language_code', '--sl', type=str,
+        required=True,
+        help='The language code for the language of the source text. Example: en')
     argument_parser.add_argument(
-            'input_file_path', type=str,
-            help='The path of the pptx file that should be translated')
-    # argument_parser.add_argument(
-    #         '--terminology', type=str,
-            # help='The path of the terminology CSV file')
+        '--target_language_code', '--tl', type=str,
+        required=True,
+        help='The language code requested for the language of the target text. Example: zh')
+    argument_parser.add_argument(
+        '--input_file_path', '--if', type=str,
+        required=True,
+        help='The path of the pptx file that should be translated')
     args = argument_parser.parse_args()
 
     terminology_names = []
@@ -412,11 +416,38 @@ def test():
 
     logger.info(f"done")
 
+def run_as_service():
+    logger.info("Run in service mode")
+    init_check()
+    subscribe_translate_task()
+
+def init():
+    argument_parser = argparse.ArgumentParser(
+            'Translates pptx files from source language to target language using LLM')
+    argument_parser.add_argument(
+            '-s', '--standalone',
+            action="store_true",
+            help='Run as local script. Default is service mode')
+    argument_parser.add_argument(
+            '--sl', '--source_language_code', type=str,
+            help='The language code for the language of the source text. Example: en')
+    argument_parser.add_argument(
+            '--tl', '--target_language_code', type=str,
+            help='The language code requested for the language of the target text. Example: zh')
+    argument_parser.add_argument(
+            '--if', '--input_file_path', type=str,
+            help='The path of the pptx file that should be translated')
+    args = argument_parser.parse_args()
+    if args.standalone:
+        run_as_local()
+    else:
+        run_as_service()
     
 if __name__== '__main__':
     logger.info(f"OLLAMA_CONFIG: {OLLAMA_CONFIG}")
-    init_check()
-    subscribe_translate_task()
+    init()
+    # init_check()
+    # subscribe_translate_task()
     # for local run
     # run_as_local()
     # for testing below:
