@@ -47,6 +47,12 @@ bash ./build.sh
 建议采用docker-compose做容器编排。首次运行，需要进行数据库等初始化：
 ```
 cd scripts/docker
+tee <<EOF > .secret
+export MYSQL_ROOT_PASSWORD=*YOUR_PASSWORD*
+export DB_USER=*YOUR_USER*
+export DB_PASSWORD=*YOUR_PASSWORD*
+export DB_NAME=office_translator
+EOF
 bash ./run.sh
 ```
 之后，可以用docker-compose up/down/start/stop services来管理，比如：
