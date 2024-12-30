@@ -109,8 +109,7 @@ def translate_from_ollama(src, source_language_code, target_language_code, model
         target_language = "Chinese"
 
     temp = {
-        # "model": "llama3.2",
-        "model": model,
+        "model": model, # "llama3.2" or "qwen2.5"
         "stream": False,
         "options": {
             'temperature': temperature
@@ -123,7 +122,6 @@ def translate_from_ollama(src, source_language_code, target_language_code, model
 Please maintain proper grammar, spelling, and punctuation in the translated version. \
 Please answer briefly without any other hints or extensions. \
 If the input text does not make sense or empty or incomplete, just return the original text. \
-If the original text is already in English, return the original text directly. \
 Remove the leading and trailing double quotes. \
 Please keeping these phrases unchanged: {DONT_TRANSLATE_WORDS}."
             },

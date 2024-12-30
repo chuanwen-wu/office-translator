@@ -27,7 +27,6 @@ services:
             - KAFKA_TOPIC_STATUS_UPDATE=status-update
             - KAFKA_SERVERS=broker:9092
             - TZ=Asia/Shanghai
-        # container_name: "controller"
         scale: 1
         entrypoint: ["uvicorn", "httpd:app", "--host", "0.0.0.0", "--port", "80"]
         depends_on:
@@ -54,7 +53,6 @@ services:
             # - 33060
         volumes:
             - "${PWD}/data/mysql:/var/lib/mysql"
-        # 环境变量
         environment:
             - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
             - MYSQL_DATABASE=office_translator

@@ -18,5 +18,5 @@ create table if not exists tasks (
     created_at datetime not null default current_timestamp,
     updated_at datetime not null default current_timestamp on update current_timestamp
 );
-ALTER TABLE tasks ADD UNIQUE KEY md5_source_language_target_language(md5, source_language, target_language);
-ALTER TABLE tasks ADD error_msg varchar(1024);
+-- ALTER TABLE tasks ADD UNIQUE KEY md5_source_language_target_language(md5, source_language, target_language);
+-- ALTER TABLE tasks ADD error_msg varchar(1024);

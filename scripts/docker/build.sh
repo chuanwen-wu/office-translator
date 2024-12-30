@@ -17,7 +17,7 @@ if [[ $1 == 'all' ]]; then
     docker tag sebalaxi/office-translator-web-app:latest sebalaxi/office-translator-web-app:${version}
     docker push sebalaxi/office-translator-web-app:${version}
 else
-    echo "build only mac release" 
+    echo "build only local release" 
     docker build -t sebalaxi/office-translator:latest -f Dockerfile-controller ../../
     docker build -t sebalaxi/office-translator-web-app:latest -f Dockerfile-web-app ../../web-app/
 fi

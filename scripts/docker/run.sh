@@ -56,7 +56,6 @@ mkdir -p data/ollama
 if [[ 'Linux' == $os ]]; then
     docker-compose pull
 fi
-# start docker compose  
 docker-compose up broker -d
 # sleep 5
 # init kafka topic
@@ -74,12 +73,18 @@ docker-compose up broker -d
 #                 --add-config max.message.bytes=1048588000
 
 docker-compose up mysql -d
-# init db
-echo "wait 5 seconds for mysql to start..."
-sleep 5
-echo "init db..."
 sql=$(cat db/init.sql)
-docker-compose exec -it mysql mysql -u ${DB_USER} -p${DB_PASSWORD} -e "$sql"
+for ((i=1; i<=10; i++));do
+    docker-compose exec -it mysql mysql -u ${DB_USER} -p${DB_PASSWORD} -e "describe office_translator.tasks;" > /dev/null 2>&1
+    if [ $? -eq 0 ]; then
+        echo "mysql initialized finished"
+        break
+    else
+        echo "mysql is initializing..."
+        sleep 1
+        docker-compose exec -it mysql mysql -u ${DB_USER} -p${DB_PASSWORD} -e "$sql"  > /dev/null 2>&1
+    fi
+done
 
 if [[ 'Linux' == $os ]]; then
     docker-compose up ollama -d
@@ -87,6 +92,7 @@ fi
 docker-compose up controller -d
 docker-compose up worker -d
 docker-compose up web-app -d
+
 # bash ../mq/install.sh
 
 # #host Ip
