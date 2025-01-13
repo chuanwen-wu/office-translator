@@ -2,15 +2,19 @@
 import logging
 import argparse
 from pptx import Presentation
+from pptx.text.text import TextFrame
 from pptx.enum.lang import MSO_LANGUAGE_ID
 from pptx.enum.shapes import MSO_SHAPE_TYPE
 from pptx.enum.text import MSO_AUTO_SIZE
+from pptx.shapes.autoshape import Shape
 import json
 import base64
 import requests
 from pptx.util import Pt
 from io import BytesIO
 import os
+import traceback
+
 KAFKA_CONFIG = {
     'topic_pptx': os.getenv('KAFKA_TOPIC_PPTX', 'pptx-translate'),
     'topic_status': os.getenv('KAFKA_TOPIC_STATUS_UPDATE', 'status-update'),
@@ -19,6 +23,16 @@ KAFKA_CONFIG = {
 
 OLLAMA_CONFIG = {
     'url': os.getenv('OLLAMA_URL', 'http://localhost:11434')
+}
+
+"""
+Dict that maps language code to MSO_LANGUAGE_ID enum value.
+"""
+LANGUAGE_CODE_TO_LANGUAGE_ID = {
+    'en': MSO_LANGUAGE_ID.ENGLISH_US,
+    'zh': MSO_LANGUAGE_ID.CHINESE_SINGAPORE,
+    # 'zh-HK': MSO_LANGUAGE_ID.CHINESE_HONG_KONG_SAR,
+    # 'zh-TW': MSO_LANGUAGE_ID.CHINESE_HONG_KONG_SAR,
 }
 
 # 这里跳过，原因是subscribe_translate_task 如果连接kafka异常，以抛异常退出
@@ -48,7 +62,7 @@ DONT_TRANSLATE_WORDS = f""
 
 # Set up logger
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
+logger.setLevel(logging.DEBUG)
 formatter = logging.Formatter("%(asctime)s - %(filename)s:%(lineno)d - %(levelname)s - %(message)s")
 
 # Log to console
@@ -140,21 +154,135 @@ Please keeping these phrases unchanged: {DONT_TRANSLATE_WORDS}."
     else: # http code != 200
         raise Exception(f'ollama resp error, status_code={resp.status_code}, text={resp.text}')
 
+'''
+根据文本框的大小，自动调整文本的字体大小
+'''
+def auto_fit_text(text_frame: TextFrame, max_font_size=40, min_font_size=6, font_family='Arial', text_original='', font_size_original:float=12.0) -> int:     
+    logger.debug(f"[auto_fit_text]: max_font_size={max_font_size}, min_font_size={min_font_size}, font_size_original={font_size_original}")
+    def emu_to_cm(emu):
+        return round(emu / 360000, 2)
+    
+    # option 2: try to resize the font size by the text frame size
+    fs = get_font_size_by_text_rect(text_frame, font_family, max_font_size, False, False)
+    logger.debug(f"get_font_size_by_text_rect = {fs}")
+    if fs > min_font_size and fs < max_font_size:
+        logger.debug(f"option2: set font size = {fs}")
+        text_frame.word_wrap = True
+        for paragraph in text_frame.paragraphs:
+            for run in paragraph.runs:
+                run.font.size = Pt(fs)
+    else:   
+        try:
+            logger.debug(text_frame._parent) # pptx.shapes.autoshape.Shape object
+            logger.debug(f"Width: {emu_to_cm(text_frame._parent.width)} cm, Height: {emu_to_cm(text_frame._parent.height)} cm")
+        except Exception as err:
+            logger.error(f"Unexpected {err=}, {type(err)=}")
+            logger.error(traceback.format_exc())
+        # option 3: try to resize the font size by the original text size
+        if font_size_original > 0:
+            fs = get_font_size_by_text_original(text_original, text_frame.text, font_size_original)
+            if fs < min_font_size:
+                fs = min_font_size
+            if fs > max_font_size:
+                fs = max_font_size
+            logger.debug(f"option3: set font size = {fs}")
+            text_frame.word_wrap = True
+            for paragraph in text_frame.paragraphs:
+                for run in paragraph.runs:
+                    run.font.size = Pt(fs)
+        else:
+            logger.debug("font_size_original is 0, do nothing")
+        
 
-def delete_run(run):
-    r = run._r
-    r.getparent().remove(r)
+# option 2
+def get_font_size_by_text_rect(text_frame: TextFrame, font_family='Arial', max_font_size=18, bold=False, italic=False, font_file='assets/fonts/Arial Unicode.ttf'):
+    if type(text_frame._parent) is pptx.table._Cell:
+        logger.debug("text_frame._parent is table cell, can't auto fit text")
+        return 0
+    
+    for i in range(max_font_size, 0, -1):
+        # logger.info(f"try {i} ------------")
+        try:
+            # text_frame.fit_text(font_family=font_family, max_size=i, bold=bold, italic=italic, font_file=font_file)
+            # text_frame.word_wrap = True
+            # logger.info(f"fit font size = {i}")
+            # return 0
+            fs = text_frame._best_fit_font_size(font_family, i, bold, italic, font_file)
+            if fs is None:
+                fs = 0
+            return fs
+        except TypeError as err:
+            # logger.debug(f"{err}")
+            # logger.debug(traceback.format_exc())
+            pass  # ignore TypeError
+        except Exception as err:
+            logger.error(f"Unexpected {err=}, {type(err)=}")
+            logger.error(traceback.format_exc())
+            break  # break the loop
+    logger.error('Error: could not find fit font size!')
+    return 0
 
+from PIL import Image, ImageDraw, ImageFont
+import math
+def get_font_size_by_text_original(text_orininal: str, text_translated: str, font_size_original: float) -> float:
+    def _rendered_size(text, point_size, font_file):
+        """
+        Return a (width, height) pair representing the size of *text* in English
+        Metric Units (EMU) when rendered at *point_size* in the font defined in
+        *font_file*.
+        """
+        emu_per_inch = 914400
+        px_per_inch = 72.0
+        font = ImageFont.truetype(font_file, point_size)
+        try:
+            px_width, px_height = font.getsize(text)
+        except AttributeError:
+            left, top, right, bottom = font.getbbox(text)
+            px_width, px_height = right - left, bottom - top
 
-def translate_text_frame(text_frame, source_language_code, target_language_code, terminology_names):
+        emu_width = int(px_width / px_per_inch * emu_per_inch)
+        emu_height = int(px_height / px_per_inch * emu_per_inch)
+        return emu_width, emu_height
+    
+    font_path = "./assets/fonts/Arial Unicode.ttf"
+    len_original = len(text_orininal)
+    len_translated = len(text_translated)
+
+    w1, h1 = _rendered_size(text_orininal, font_size_original, font_path)
+    logger.debug(f"{text_orininal}, {font_size_original}, {w1}, {h1}")
+
+    w2, h2 = _rendered_size(text_translated, font_size_original, font_path)
+    logger.debug(f"{text_translated}, {font_size_original}, {w2}, {h2}")
+    
+    # w1*h1 = w2*h2*n^2
+    # option 1:
+    # fs = round(math.sqrt(w1/w2) * font_size_original, 1)
+
+    # option 2:
+    fs = round(math.sqrt(w1*h1/(h2*w2)) * font_size_original, 1)
+
+    w3, h3 = _rendered_size(text_translated, fs, font_path)
+    logger.debug(f"{text_translated}, {fs}, {w3}, {h3}")
+
+    return fs
+
+def translate_text_frame(text_frame: TextFrame, source_language_code, target_language_code, terminology_names, auto_resize_text=True):
+    def delete_run(run):
+        r = run._r
+        r.getparent().remove(r)
+
+    changed = False
+    original_max_fs_pt = None
+    original_min_fs_pt = None
+    text_original = text_frame.text
     for paragraph in text_frame.paragraphs:
         paraText = ''
         for index, paragraph_run in enumerate(paragraph.runs):
             paraText += paragraph_run.text
-        # logger.info(paraText)
-
+            
         try:
-            if len(paraText.strip()) == 0:
+            paraText = paraText.strip()
+            if len(paraText) == 0:
                 continue
 
             # 源语言是中文，但实际文本未包含中文，跳过
@@ -162,29 +290,46 @@ def translate_text_frame(text_frame, source_language_code, target_language_code,
                 logger.info(f"not chinese: {paraText}")
                 continue
 
-            response_text = translate_from_ollama(paraText.strip(), source_language_code, target_language_code)
+            response_text = translate_from_ollama(paraText, source_language_code, target_language_code)
             paragraph.runs[0].text = response_text
+            paragraph.runs[0].font.language_id = LANGUAGE_CODE_TO_LANGUAGE_ID[target_language_code]
+            logger.info(f"font: id={paragraph.runs[0].font.language_id}, name={paragraph.runs[0].font.name}, size(pt)={paragraph.runs[0].font.size.pt if paragraph.runs[0].font.size is not None else None}")
             size = len(paragraph.runs)
             index = size - 1
             while index > 0:
-                # logger.info(f"delete run {index} of {size}")
                 delete_run(paragraph.runs[index])
                 index = index - 1
 
-            # # set font for translated text
-            # if paragraph.font.size is not None:
-            #     paragraph.font.size = paragraph.font.size - Pt(2)
-            # elif paragraph.runs[0].font.size is not None:
-            #     paragraph.runs[0].font.size = paragraph.runs[0].font.size - Pt(2)
+            # 取得原本段落中最大的字体，以及最小的字体
+            if paragraph.runs[0].font.size is not None:
+                if original_max_fs_pt is None:
+                    original_max_fs_pt = paragraph.runs[0].font.size.pt
+                elif paragraph.runs[0].font.size.pt > original_max_fs_pt:
+                    original_max_fs_pt = paragraph.runs[0].font.size.pt
+                if original_min_fs_pt is None:
+                    original_min_fs_pt = paragraph.runs[0].font.size.pt
+                elif paragraph.runs[0].font.size.pt < original_min_fs_pt:
+                    original_min_fs_pt = paragraph.runs[0].font.size.pt
 
-                # for each in paragraph.runs: each.font.size = run.font.size
-            
-            # run.font.language_id = LANGUAGE_CODE_TO_LANGUAGE_ID[target_language_code]
-            # paragraph.runs[index].text = reponse_text
-            # paragraph.runs[index].font.language_id = LANGUAGE_CODE_TO_LANGUAGE_ID[target_language_code]
+            changed = True
         except Exception as err:
             logger.error(f"Unexpected {err=}, {type(err)=}")
             raise err
+
+    if auto_resize_text and changed and len(text_frame.text.strip()) > 0:
+        font_size_original = (original_max_fs_pt+original_min_fs_pt)/2 if original_max_fs_pt is not None and original_min_fs_pt is not None else 0
+        if original_max_fs_pt is None:
+            original_max_fs_pt = 40
+        if original_min_fs_pt is None:
+            original_min_fs_pt = 6
+        if source_language_code.lower() == 'zh' and target_language_code.lower() == 'en':
+            auto_fit_text(text_frame, max_font_size=int(original_max_fs_pt), min_font_size=6, 
+                          text_original=text_original, font_size_original=font_size_original)
+            # text_frame.word_wrap = True
+            # text_frame.auto_size = MSO_AUTO_SIZE.TEXT_TO_FIT_SHAPE
+        elif source_language_code.lower() == 'en' and target_language_code.lower() == 'zh':
+            auto_fit_text(text_frame, max_font_size=40, min_font_size=int(original_min_fs_pt), 
+                          text_original=text_original, font_size_original=font_size_original)
 
 def translate_table(table, source_language_code, target_language_code, terminology_names):
     for row in table.rows:
@@ -193,22 +338,22 @@ def translate_table(table, source_language_code, target_language_code, terminolo
             translate_text_frame(text_frame, source_language_code, target_language_code, terminology_names)
             
 
-def translate_shape(shape, source_language_code, target_language_code, terminology_names):
+def translate_shape(shape, source_language_code, target_language_code, terminology_names, auto_resize_text=True):
     # table
     if shape.has_table:
         translate_table(shape.table, source_language_code, target_language_code, terminology_names)
 
     # text_frame
     if shape.has_text_frame:
-        translate_text_frame(shape.text_frame, source_language_code, target_language_code, terminology_names)
+        translate_text_frame(shape.text_frame, source_language_code, target_language_code, terminology_names, auto_resize_text=auto_resize_text)
 
     # groups
     if shape.shape_type == MSO_SHAPE_TYPE.GROUP:
         for sub_shape in shape.shapes:
-            translate_shape(sub_shape, source_language_code, target_language_code, terminology_names)
+            translate_shape(sub_shape, source_language_code, target_language_code, terminology_names, auto_resize_text=auto_resize_text)
     
 
-def translate_presentation(presentation, source_language_code, target_language_code, terminology_names):
+def translate_presentation(presentation: Presentation, source_language_code, target_language_code, terminology_names, auto_resize_text=True):
     slide_number = 1
     for slide in presentation.slides:
         logger.info('Slide {slide_number} of {number_of_slides}'.format(
@@ -235,7 +380,7 @@ def translate_presentation(presentation, source_language_code, target_language_c
 
             # translate body
             for shape in slide.shapes:
-                translate_shape(shape, source_language_code, target_language_code, terminology_names)
+                translate_shape(shape, source_language_code, target_language_code, terminology_names, auto_resize_text=auto_resize_text)
         except Exception as err:
             logger.error(f"Unexpected err: {err}, {type(err)}")
             raise err
@@ -269,6 +414,13 @@ def run_as_local():
             file_path=args.input_file_path,
             source_language_code=args.source_language_code,
             target_language_code=args.target_language_code))
+    if not check_language_code(args.source_language_code):
+        logger.error(f"Invalid source_language_code: {args.source_language_code}")
+        return 1, "Invalid source_language_code"
+    if not check_language_code(args.target_language_code):
+        logger.error(f"Invalid target_language_code: {args.target_language_code}")
+        return 1, "Invalid target_language_code"
+    
     presentation = Presentation(args.input_file_path)
     translate_presentation(presentation,
                            args.source_language_code,
@@ -306,7 +458,7 @@ def subscribe_translate_task():
             #logger.info("%s:%d:%d: key=%s" % (message.topic, message.partition, message.offset, message.key))
             task = json.loads(message.value.decode('utf-8'))
             # task['input_file_content'] = base64.b64decode(task['input_file_content'])
-            logger.info(f"Receive task: id={task['id']}, md5={task['md5']}, source_language={task['source_language']}, target_language={task['target_language']}, input_file_path={task['input_file_path']}, output_file_path={task['output_file_path']}")
+            logger.info(f"Receive task: id={task['id']}, md5={task['md5']}, source_language={task['source_language']}, target_language={task['target_language']}, input_file_path={task['input_file_path']}, output_file_path={task['output_file_path']}, auto_resize_text={task['auto_resize_text']}")
             break
         consumer.close()
         # task['status'] = 1 #processing
@@ -315,7 +467,8 @@ def subscribe_translate_task():
             'status': 1,
             'source_language': task['source_language'],
             'target_language': task['target_language'],
-            'md5': task['md5']
+            'md5': task['md5'],
+            'auto_resize_text': task['auto_resize_text']
         })
 
         if 'dont_translate_list' in task and task['dont_translate_list'] != '':
@@ -326,7 +479,7 @@ def subscribe_translate_task():
         try: 
             with open(task['input_file_path'], 'rb') as f:
                 input_file_content = f.read()
-            ret, output_file_content = translate_pptx_file(input_file_content, task['source_language'], task['target_language'])
+            ret, output_file_content = translate_pptx_file(input_file_content, task['source_language'], task['target_language'], auto_resize_text=task['auto_resize_text'])
             if ret == 0:
                 logger.info(f"write translated file to {task['output_file_path']}")
                 with open(task['output_file_path'], 'wb') as f:
@@ -366,13 +519,23 @@ def publish_status_update(task):
         logger.info(f'KafkaError: {err}')
         pass
 
+def check_language_code(language_code):
+    return True if language_code in LANGUAGE_CODE_TO_LANGUAGE_ID else False
+
 # return (ret, output_file_content)
 # ret =0 表示成功；
 # ret=1表示输入文件有错误；
 # ret=2表示翻译过程出错
-def translate_pptx_file(input_file_content, source_language_code, target_language_code):
+def translate_pptx_file(input_file_content: bytes, source_language_code, target_language_code, auto_resize_text=True):
     ret = 0
     logger.info(f"[translate_pptx_file] source_language_code: {source_language_code}, target_language_code: {target_language_code}")
+    
+    if not check_language_code(source_language_code):
+        logger.error(f"Invalid source_language_code: {source_language_code}")
+        return 1, "Invalid source_language_code"
+    if not check_language_code(target_language_code):
+        logger.error(f"Invalid target_language_code: {target_language_code}")
+        return 1, "Invalid target_language_code"
     try:
         presentation = Presentation(BytesIO(input_file_content))
     except Exception as err:
@@ -380,7 +543,7 @@ def translate_pptx_file(input_file_content, source_language_code, target_languag
         logger.error(f"Unexpected {err}, {type(err)}")
         return ret, str(err)
     try:
-        translate_presentation(presentation, source_language_code, target_language_code, None)
+        translate_presentation(presentation, source_language_code, target_language_code, None, auto_resize_text=auto_resize_text)
         output_file_content = BytesIO()
         presentation.save(output_file_content)
         return ret, output_file_content.getvalue()
@@ -442,14 +605,9 @@ def init():
         run_as_local()
     else:
         run_as_service()
-    
+
+import pptx
 if __name__== '__main__':
     logger.info(f"OLLAMA_CONFIG: {OLLAMA_CONFIG}")
+    # print(pptx.version)
     init()
-    # init_check()
-    # subscribe_translate_task()
-    # for local run
-    # run_as_local()
-    # for testing below:
-    # test()
-    # print(get_dont_translate_words(DONT_TRANSLATE_WORDS_FILE))

@@ -46,19 +46,29 @@ bash ./build.sh
 ### run
 建议采用docker-compose做容器编排。首次运行，需要进行数据库等初始化：
 ```
+MYSQL_ROOT_PASSWORD=**YOUR_PASSWORD**
+DB_USER=**YOUR_USER**
+DB_PASSWORD=**YOUR_PASSWORD**
+
 cd scripts/docker
 tee <<EOF > .secret
-export MYSQL_ROOT_PASSWORD=*YOUR_PASSWORD*
-export DB_USER=*YOUR_USER*
-export DB_PASSWORD=*YOUR_PASSWORD*
+export MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
+export DB_USER=${DB_USER}
+export DB_PASSWORD=${DB_PASSWORD}
 export DB_NAME=office_translator
 EOF
 bash ./run.sh
+```
+首次运行，需要先手动拉下模型：
+```
+docker-compose exec ollama ollama pull qwen2.5
+docker-compose exec ollama ollama pull llama3.2
 ```
 之后，可以用docker-compose up/down/start/stop services来管理，比如：
 ```
 docker-compose up web-app -d
 docker-compose down web-app -d
 ```
+浏览器访问：http://your_ip:8080
 
 ## License
