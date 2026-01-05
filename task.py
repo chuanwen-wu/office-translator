@@ -28,7 +28,7 @@ logger.info(f"DB_CONFIG: {DB_CONFIG}")
 class Task:
     def __init__(self, id=None, md5=None, status=None, file_name=None, source_language=None, target_language=None, 
                  dont_translate_list=None, input_file_path=None, output_file_path=None, callback_url=None, 
-                 user_id=None, created_at=None, updated_at=None, input_file_content = None, output_file_content=None, error_msg=''):
+                 user_id=None, created_at=None, updated_at=None, input_file_content = None, output_file_content=None, error_msg='', auto_resize_text=True):
         self.id = id
         self.md5 = md5
         self.status = status
@@ -46,6 +46,7 @@ class Task:
         self.input_file_content = input_file_content
         self.output_file_content = output_file_content
         self.error_msg = error_msg
+        self.auto_resize_text = auto_resize_text
 
     def __del__(self):
         if self.db_conn is not None and self.db_conn.is_connected():
@@ -57,6 +58,7 @@ class Task:
             f"source_language={self.source_language}, target_language={self.target_language}, "
             f"dont_translate_list={self.dont_translate_list}, input_file_path={self.input_file_path}, "
             f"output_file_path={self.output_file_path}, callback_url={self.callback_url}, user_id={self.user_id}, "
+            f"error_msg={self.error_msg}, auto_resize_text={self.auto_resize_text}, "
             f"created_at={self.created_at}, updated_at={self.updated_at})")
 
     def connect_to_mysql(self,config, attempts=3, delay=2):
@@ -109,9 +111,9 @@ class Task:
     
     def query(self):
         if self.id is not None:
-            sql = f"SELECT id, md5, status, file_name, source_language, target_language, dont_translate_list, input_file_path, output_file_path, callback_url, user_id, error_msg, created_at, updated_at FROM tasks WHERE id = {self.id}"
+            sql = f"SELECT id, md5, status, file_name, source_language, target_language, dont_translate_list, input_file_path, output_file_path, callback_url, user_id, error_msg, auto_resize_text, created_at, updated_at FROM tasks WHERE id = {self.id}"
         elif self.md5 is not None and self.source_language is not None and self.target_language is not None:
-            sql = f"SELECT id, md5, status, file_name, source_language, target_language, dont_translate_list, input_file_path, output_file_path, callback_url, user_id, error_msg, created_at, updated_at FROM tasks WHERE md5 = '{self.md5}' AND source_language = '{self.source_language}' AND target_language='{self.target_language}'"
+            sql = f"SELECT id, md5, status, file_name, source_language, target_language, dont_translate_list, input_file_path, output_file_path, callback_url, user_id, error_msg, auto_resize_text, created_at, updated_at FROM tasks WHERE md5 = '{self.md5}' AND source_language = '{self.source_language}' AND target_language='{self.target_language}'"
         else:
             logger.error("query error")
             return False
@@ -122,18 +124,18 @@ class Task:
         else:
             self.id, self.md5, self.status, self.file_name, self.source_language, self.target_language, \
                 self.dont_translate_list, self.input_file_path, self.output_file_path, self.callback_url, \
-                self.user_id, self.error_msg, self.created_at, self.updated_at = rows[0]
+                self.user_id, self.error_msg, self.auto_resize_text, self.created_at, self.updated_at = rows[0]
             return True
     
     def insert_update(self):
         cnx = self.get_connection()
         sql_str = ("INSERT INTO tasks "
-            "(md5, status, file_name, source_language, target_language, dont_translate_list, input_file_path, output_file_path, error_msg) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)"
-            " ON DUPLICATE KEY UPDATE status=%s, file_name=%s, dont_translate_list=%s,input_file_path=%s, output_file_path=%s, error_msg=%s")
+            "(md5, status, file_name, source_language, target_language, dont_translate_list, input_file_path, output_file_path, error_msg, auto_resize_text) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+            " ON DUPLICATE KEY UPDATE status=%s, file_name=%s, dont_translate_list=%s,input_file_path=%s, output_file_path=%s, error_msg=%s, auto_resize_text=%s")
         data = (self.md5, self.status, self.file_name, self.source_language, self.target_language, 
-            self.dont_translate_list, self.input_file_path, self.output_file_path, self.error_msg,
-            self.status, self.file_name, self.dont_translate_list, self.input_file_path, self.output_file_path, self.error_msg)
+            self.dont_translate_list, self.input_file_path, self.output_file_path, self.error_msg, self.auto_resize_text,
+            self.status, self.file_name, self.dont_translate_list, self.input_file_path, self.output_file_path, self.error_msg, self.auto_resize_text)
         logger.info(sql_str % data)
         with cnx.cursor() as cursor:
             cursor.execute(sql_str, data)
@@ -153,21 +155,21 @@ class Task:
         self.status = 3
         return self.update()
 
-    def reset(self):
-        ret = 0
-        cnx = self.get_connection()
-        with cnx.cursor() as cursor:
-            if self.md5 is not None and self.source_language is not None and self.target_language is not None:
-                result = cursor.execute(f"UPDATE tasks SET status = 0 WHERE md5 = '{self.md5}'"
-                                    f" and source_language = '{self.source_language}'"
-                                    f" and target_language = '{self.target_language}'")
-            elif self.id is not None:
-                result = cursor.execute(f"UPDATE tasks SET status = {self.status} WHERE id = {self.id}")
-            else:
-                logger.error(f"id or md5, source_language, target_language not found in task")
-                ret = 1
-        cnx.commit()
-        return ret
+    # def reset(self):
+    #     ret = 0
+    #     cnx = self.get_connection()
+    #     with cnx.cursor() as cursor:
+    #         if self.md5 is not None and self.source_language is not None and self.target_language is not None:
+    #             result = cursor.execute(f"UPDATE tasks SET status = 0 WHERE md5 = '{self.md5}'"
+    #                                 f" and source_language = '{self.source_language}'"
+    #                                 f" and target_language = '{self.target_language}'")
+    #         elif self.id is not None:
+    #             result = cursor.execute(f"UPDATE tasks SET status = {self.status} WHERE id = {self.id}")
+    #         else:
+    #             logger.error(f"id or md5, source_language, target_language not found in task")
+    #             ret = 1
+    #     cnx.commit()
+    #     return ret
     
     def update(self):
         cnx = self.get_connection()
@@ -198,6 +200,7 @@ class Task:
             'output_file_path': self.output_file_path,
             'callback_url': self.callback_url,
             'user_id': self.user_id,
+            'auto_resize_text': self.auto_resize_text
             # 'input_file_content': None if self.input_file_content is None else base64.b64encode(self.input_file_content).decode('utf-8'),
             # 'created_at': self.created_at,
             # 'updated_at': self.updated_at
@@ -237,4 +240,6 @@ class Task:
             obj.output_file_content = arr['output_file_content']
         if 'error_msg' in arr:
             obj.error_msg = arr['error_msg']
+        if 'auto_resize_text' in arr:
+            obj.auto_resize_text = arr['auto_resize_text']
         return obj

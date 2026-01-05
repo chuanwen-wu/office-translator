@@ -65,156 +65,17 @@ KAFKA_CONFIG = {
     'servers': os.getenv('KAFKA_SERVERS', 'localhost:9092').split(',')
 }
 
-# class MyServer(SimpleHTTPRequestHandler):
-#     def __init__(self, *args, **kwargs):
-#         self.protocol_version = 'HTTP/1.0'
-#         logger.info(f"self.directory: {done_repo_dir}")
-#         super().__init__(*args, directory=done_repo_dir, **kwargs)
-
-#     def do_GET(self):
-#         logger.info(f"do_GET: {self.command}, {self.path}, headers: \n{self.headers}")
-#         parsed = urlparse(self.path)
-#         p = self.path.split("?")[0]
-#         p = p.split("/")
-#         pp = p[1]
-#         if pp == 'query':
-#             query_params = parse_qs(parsed.query)
-#             logger.info(query_params)
-#             task_id = query_params.get('task_id', [''])[0]
-#             md5 = query_params.get('md5', [''])[0]
-#             source_language = query_params.get('source_language', [''])[0]
-#             target_language = query_params.get('target_language', [''])[0]
-#             if task_id or md5:
-#                 task_obj = Task(id=task_id, md5=md5, source_language=source_language, target_language=target_language)
-#                 logger.info(f"task_obj: {task_obj}")
-#                 ret = task_obj.query()
-#                 if ret is True:
-#                     self.send_response(200)
-#                     self.send_header("Content-type", "application/json")
-#                     self.end_headers()
-#                     download_file_path = ''
-#                     if task_obj.status == 2:
-#                         download_file_path = download_url_prefix + task_obj.output_file_path
-#                         msg = 'finished'
-#                     elif task_obj.status == 1:
-#                         msg = 'processing'
-#                     elif task_obj.status == 0:
-#                         msg = 'pending'
-#                     elif task_obj.status == 3:
-#                         msg = task_obj.error_msg
-#                     else:
-#                         msg = 'unknown'
-#                     response = json.dumps({
-#                         'code': 0,
-#                         'status': task_obj.status,
-#                         'task_id': task_obj.id,
-#                         'message': msg,
-#                         'download_file_path': download_file_path
-#                     })
-#                     logger.info(f"response: {response}")
-#                     self.wfile.write(response.encode())
-#                 else:
-#                     self.send_error(404, "task not found")
-#             else:
-#                 self.send_error(403, "request params error")
-#         elif pp == 'download':
-#             filename = p[-1]
-#             logger.info(f"download file: {filename}")
-#             self.path = filename
-#             super().do_GET()
-#         else:
-#             self.send_response(404)
-#             self.send_header("Content-type", "text/plain")
-#             self.end_headers()
-#             self.wfile.write(b'Not Found')
-
-#     def do_POST(self):
-#         logger.info(f"do_POST: {self.command}, {self.path}, headers: \n{self.headers}")
-#         parsed = urlparse(self.path)
-#         # logger.info(f"parsed = {parsed}")
-#         if parsed.path == '/ppt-translate':
-#             # query_params = parse_qs(urlparse(self.path).query)
-#             # data = query_params.get('data', [''])[0]
-#             # source_lang
-#             # target_lang
-#             # dont_translate_word_list
-#             # input_file
-#             content_type, pdict = parse_header(self.headers.get('content-type'))
-#             if content_type == 'multipart/form-data':
-#                 pdict['boundary'] = bytes(pdict['boundary'], "utf-8")
-#                 post_vars = parse_multipart(self.rfile, pdict)
-#                 # print(f"postvars: {post_vars}")
-#                 source_lang = post_vars['source_lang'][0]
-#                 target_lang = post_vars['target_lang'][0]
-#                 input_file_content = post_vars['file'][0]
-#                 input_filename = post_vars.get('filename', [''])[0]
-#                 force = post_vars['force'][0]
-#                 if not input_filename.endswith('.pptx'):
-#                     logger.error(f"input_filename must end with .pptx")
-#                     self.send_response(400)
-#                     self.send_header("Content-type", "application/json")
-#                     self.end_headers()
-#                     response = json.dumps({'code': 400, 'message': 'input_filename must end with .pptx'})
-#                     self.wfile.write(response.encode())
-#                     return 0
-#                 dont_translate_word_list = post_vars['dont_translate_word_list'][0]
-#                 res = submit_translate_task(source_lang, target_lang, input_file_content, dont_translate_word_list, input_filename, force)
-#                 self.send_response(200)
-#                 self.send_header("Content-type", "application/json")
-#                 self.end_headers()
-#                 response = json.dumps(res)
-#                 self.wfile.write(response.encode())
-#                 return 0
-#             elif content_type == 'application/json':
-#                 req_datas = self.rfile.read(int(self.headers['content-length'])) 
-#                 post_data = json.loads(req_datas.decode())
-#                 # 昂贵的操作
-#                 tmp = post_data.copy()
-#                 del tmp['input_file_content']
-#                 logger.info(f"post_data: {tmp}")
-#                 dont_translate_word_list = ''
-#                 input_filename = "default.pptx"
-#                 if 'source_lang' in post_data and 'target_lang' in post_data and 'input_file_content' in post_data:
-#                     source_lang = post_data['source_lang']
-#                     target_lang = post_data['target_lang']
-#                     input_file_content = base64.b64decode(post_data['input_file_content']) 
-#                     if 'dont_translate_words' in post_data:
-#                         dont_translate_word_list = post_data['dont_translate_words']
-#                     if 'input_filename' in post_data:
-#                         input_filename = post_data['input_filename']
-#                     if 'force' in post_data:
-#                         force = post_data['force']
-#                     else:
-#                         force = False
-#                     res = submit_translate_task(source_lang, target_lang, input_file_content, dont_translate_word_list, input_filename, force)
-#                     self.send_response(200)
-#                     self.send_header("Content-type", "application/json")
-#                     self.end_headers()
-#                     response = json.dumps(res)
-#                     self.wfile.write(response.encode())
-#                     return 0
-#             self.send_response(504)  # 504
-#             self.send_header('Content-type', 'text/plain')
-#             self.end_headers()
-#             self.wfile.write(b'Bad Request')
-#             return 0
-#         else:
-#             self.send_response(404)
-#             self.send_header('Content-type', 'text/plain')
-#             self.end_headers()
-#             self.wfile.write(b'Not Found')
-    
-def submit_translate_task(source_lang, target_lang, input_file_content, dont_translate_word_list, input_filename, force=False):
+def submit_translate_task(source_lang, target_lang, input_file_content, dont_translate_word_list, input_filename, force=False, auto_resize_text=True):
     '''
     提交翻译任务。通过md5判断文件是否重复翻译过，是的话，返回历史文件；
     否则，提交翻译任务，返回task信息
     '''
-    logger.info(f"submit_translate_task: source_lang={source_lang}, target_lang={target_lang}, dont_translate_word_list={dont_translate_word_list}, input_filename={input_filename}")
+    logger.info(f"submit_translate_task: source_lang={source_lang}, target_lang={target_lang}, dont_translate_word_list={dont_translate_word_list}, input_filename={input_filename}, auto_resize_text={auto_resize_text}")
     os.makedirs(file_repo_dir, exist_ok=True)
     file_md5 = hashlib.md5(input_file_content).hexdigest()
     task_obj = Task(md5=file_md5, 
                     source_language=source_lang, 
-                    target_language=target_lang, 
+                    target_language=target_lang,
                     )
     ret = task_obj.query()
     if ret is True and task_obj.status != 3:  #任务存在且未失败
@@ -234,6 +95,7 @@ def submit_translate_task(source_lang, target_lang, input_file_content, dont_tra
                 task_obj.file_name = input_filename
                 task_obj.dont_translate_list = dont_translate_word_list
                 task_obj.input_file_content = input_file_content
+                task_obj.auto_resize_text = auto_resize_text
                 res = insert_update_task(task_obj)
                 return res['code'], res
         else:
@@ -251,6 +113,7 @@ def submit_translate_task(source_lang, target_lang, input_file_content, dont_tra
         task_obj.file_name = input_filename
         task_obj.dont_translate_list = dont_translate_word_list
         task_obj.input_file_content = input_file_content
+        task_obj.auto_resize_text = auto_resize_text
         if ret is True and task_obj.status == 3:   #任务存在且已失败, 自动重新翻译
             logger.info(f"restart task which failed: {task_obj}")
             res = insert_update_task(task_obj)
@@ -262,7 +125,6 @@ def submit_translate_task(source_lang, target_lang, input_file_content, dont_tra
 
 def insert_update_task(task_obj:Task):
     input_file_path = os.path.join(input_repo_dir, task_obj.md5 + '-' + task_obj.file_name)
-    print(f"input_file_path: {input_file_path}")
     # 写入完整的文件内容
     with open(input_file_path, 'wb') as f:    
         f.write(task_obj.input_file_content)
@@ -290,7 +152,7 @@ def insert_update_task(task_obj:Task):
     }
 
 def publish_translate_task(task: Task):
-    logger.info(f"[publish_translate_task] id={task.id}, file_name={task.file_name}, source_language={task.source_language}, target_language={task.target_language} ")
+    logger.info(f"[publish_translate_task] id={task.id}, file_name={task.file_name}, source_language={task.source_language}, target_language={task.target_language}, auto_resize_text={task.auto_resize_text} ")
     topic_name = KAFKA_CONFIG['topic_pptx']
     kafka_servers = KAFKA_CONFIG['servers']
     producer = KafkaProducer(bootstrap_servers=kafka_servers)
@@ -471,10 +333,11 @@ class TaskData(BaseModel):
     input_filename: str
     dont_translate_words: Union[str, None] = None
     force: Union[bool, None] = None
+    auto_resize_text: Union[bool, None] = None
 
 @app.post("/api/ppt-translate")
 def ppt_translate(task: TaskData):
-    logger.info(f"new task: {task.input_filename}, {task.source_lang}, {task.target_lang}, {task.dont_translate_words}, {task.force}")
+    logger.info(f"new task: {task.input_filename}, {task.source_lang}, {task.target_lang}, {task.dont_translate_words}, {task.force}, {task.auto_resize_text}")
     source_lang = task.source_lang
     target_lang = task.target_lang
     input_file_content = base64.b64decode(task.input_file_content)
@@ -487,5 +350,9 @@ def ppt_translate(task: TaskData):
         force = False
     else:
         force = task.force
-    res = submit_translate_task(source_lang, target_lang, input_file_content, dont_translate_words, input_filename, force)
+    if not task.auto_resize_text:
+        auto_resize_text = False
+    else:
+        auto_resize_text = task.auto_resize_text
+    res = submit_translate_task(source_lang, target_lang, input_file_content, dont_translate_words, input_filename, force, auto_resize_text)
     return res

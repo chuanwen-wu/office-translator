@@ -11,6 +11,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY httpd.py /app/httpd.py
 COPY task.py /app/task.py
-COPY pptx_translator.py /app/pptx_translator.py
 COPY dont-translate-word.txt /app/dont-translate-word.txt
+COPY assets /app/assets
+COPY pptx_translator.py /app/pptx_translator.py
+
 ENTRYPOINT ["python /app/httpd.py", "-b"]
