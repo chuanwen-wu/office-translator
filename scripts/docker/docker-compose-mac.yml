@@ -9,7 +9,7 @@ services:
         environment:
             - CONTROLLER_ENDPOINT=http://controller
             - TZ=Asia/Shanghai
-        entrypoint: ["python", "-m", "streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.maxUploadSize", "250"]
+        entrypoint: [ "python", "-m", "streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.maxUploadSize", "250" ]
     controller:
         image: sebalaxi/office-translator:latest
         ports:
@@ -22,30 +22,32 @@ services:
             - DB_HOST=mysql
             - DB_USER=${DB_USER}
             - DB_PASSWORD=${DB_PASSWORD}
-            - DB_NAME=office_translator
+            - DB_NAME=${DB_NAME}
             - KAFKA_TOPIC_PPTX=pptx-translate
             - KAFKA_TOPIC_STATUS_UPDATE=status-update
             - KAFKA_SERVERS=broker:9092
             - TZ=Asia/Shanghai
         # container_name: "controller"
         scale: 1
-        entrypoint: ["uvicorn", "httpd:app", "--host", "0.0.0.0", "--port", "80"]
+        entrypoint: [ "uvicorn", "httpd:app", "--host", "0.0.0.0", "--port", "80" ]
         depends_on:
-          - mysql
-          - broker
+            - mysql
+            - broker
     worker:
         image: sebalaxi/office-translator:latest
-        entrypoint: ["python", "pptx_translator.py"]
+        entrypoint: [ "python", "pptx_translator.py" ]
         restart: unless-stopped
         volumes:
             - "${PWD}/data/file_repo:/app/file_repo"
         depends_on:
-          - broker
+            - broker
+        env_file:
+            - .env
         environment:
             - KAFKA_SERVERS=broker:9092
             - KAFKA_TOPIC_PPTX=pptx-translate
             - KAFKA_TOPIC_STATUS_UPDATE=status-update
-            - OLLAMA_URL=http://${host_ip}:11434  # only for mac
+            - OLLAMA_URL=http://${host_ip}:11434 # only for mac
             - TZ=Asia/Shanghai
     mysql:
         image: mysql:9.1.0
@@ -57,7 +59,7 @@ services:
         # 环境变量
         environment:
             - MYSQL_ROOT_PASSWORD=${MYSQL_ROOT_PASSWORD}
-            - MYSQL_DATABASE=office_translator
+            - MYSQL_DATABASE=${DB_NAME}
             - TZ=Asia/Shanghai
 
     broker:

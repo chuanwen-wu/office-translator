@@ -6,6 +6,9 @@ import json
 import base64
 import hashlib
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 from task import Task
 from io import BytesIO
 import logging

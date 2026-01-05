@@ -11,6 +11,9 @@ import requests
 from pptx.util import Pt
 from io import BytesIO
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 KAFKA_CONFIG = {
     'topic_pptx': os.getenv('KAFKA_TOPIC_PPTX', 'pptx-translate'),
     'topic_status': os.getenv('KAFKA_TOPIC_STATUS_UPDATE', 'status-update'),
@@ -94,7 +97,9 @@ def parse_dont_translate_words(text: str):
     DONT_TRANSLATE_WORDS = ", ".join(arr)
     return DONT_TRANSLATE_WORDS
 
-def translate_from_ollama(src, source_language_code, target_language_code, model:str="qwen2.5", temperature:int=0):
+def translate_from_ollama(src, source_language_code, target_language_code, model:str=None, temperature:int=0):
+    if model is None:
+        model = os.getenv('OLLAMA_MODEL', 'qwen2.5')
     source_language = ""
     target_language = ""
     if source_language_code.lower() == 'en':
@@ -108,7 +113,7 @@ def translate_from_ollama(src, source_language_code, target_language_code, model
         target_language = "Chinese"
 
     temp = {
-        "model": model, # "llama3.2" or "qwen2.5"
+        "model": model, # "llama3.2" or "qwen2.5" or "huihui_ai/hy-mt1.5-abliterated:7b"
         "stream": False,
         "options": {
             'temperature': temperature

@@ -9,7 +9,7 @@ services:
         environment:
             - CONTROLLER_ENDPOINT=http://controller
             - TZ=Asia/Shanghai
-        entrypoint: ["python", "-m", "streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.maxUploadSize", "250"]
+        entrypoint: [ "python", "-m", "streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.maxUploadSize", "250" ]
     controller:
         image: sebalaxi/office-translator:latest
         ports:
@@ -28,23 +28,23 @@ services:
             - KAFKA_SERVERS=broker:9092
             - TZ=Asia/Shanghai
         scale: 1
-        entrypoint: ["uvicorn", "httpd:app", "--host", "0.0.0.0", "--port", "80"]
+        entrypoint: [ "uvicorn", "httpd:app", "--host", "0.0.0.0", "--port", "80" ]
         depends_on:
-          - mysql
-          - broker
+            - mysql
+            - broker
     worker:
         image: sebalaxi/office-translator:latest
-        entrypoint: ["python", "pptx_translator.py"]
+        entrypoint: [ "python", "pptx_translator.py" ]
         restart: unless-stopped
         volumes:
             - "${PWD}/data/file_repo:/app/file_repo"
         depends_on:
-          - broker
+            - broker
         environment:
             - KAFKA_SERVERS=broker:9092
             - KAFKA_TOPIC_PPTX=pptx-translate
             - KAFKA_TOPIC_STATUS_UPDATE=status-update
-            - OLLAMA_URL=http://ollama:11434  # or use api endpoint of ollama outside
+            - OLLAMA_URL=http://ollama:11434 # or use api endpoint of ollama outside
             - TZ=Asia/Shanghai
     mysql:
         image: mysql:9.1.0
@@ -94,4 +94,4 @@ services:
                     devices:
                         - driver: nvidia
                           count: all
-                          capabilities: [gpu]
+                          capabilities: [ gpu ]

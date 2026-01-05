@@ -1,5 +1,5 @@
 #!/bin/bash
-source .secret
+source .env
 
 if [[ '' == $DB_USER || '' == $MYSQL_ROOT_PASSWORD || '' == $DB_PASSWORD ]]; then
     echo "Env of DB_USER, MYSQL_ROOT_PASSWORD, DB_PASSWORD not found, exit"

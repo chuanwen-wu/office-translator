@@ -4,6 +4,9 @@ import logging
 import json
 import requests
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
 
 if 'logger' not in st.session_state:
     logger = logging.getLogger(__name__)
